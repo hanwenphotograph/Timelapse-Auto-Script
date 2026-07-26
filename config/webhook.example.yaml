@@ -1,0 +1,6 @@
+# 与原 shell 版 webhook.yaml 兼容的配置示例。
+enabled: false
+url: ''
+body: '{"content":"__CONTENT__","time":"__TIME__"}'
+push_image: false
+image_body: '{"content":"__CONTENT__","image":"__IMGBASE64__","md5":"__IMGMD5__"}'

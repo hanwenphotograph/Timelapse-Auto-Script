@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "timelapse-manager"
+version = "0.1.0"
+description = "Cross-platform timelapse task manager with CLI and GUI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "PyYAML>=6.0.2,<7",
+  "psutil>=6.1,<8",
+  "Pillow>=11.0,<13",
+  "customtkinter>=5.2.2,<6",
+]
+
+[project.scripts]
+timelapse-manager = "timelapse_manager.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
