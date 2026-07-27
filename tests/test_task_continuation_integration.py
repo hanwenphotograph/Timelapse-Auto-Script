@@ -39,6 +39,7 @@ class TaskContinuationIntegrationTests(unittest.TestCase):
         project["commands"]["camera"] = command_for(FAKE_CAMERA)
         project["commands"]["bracketlapse"] = command_for(FAKE_BRACKET)
         project["commands"]["bracketlapse_fallback"] = ""
+        project["commands"]["sunsetscore"] = "missing-sunsetscore-for-test"
         project["runtime"]["startup_probe_seconds"] = 0.05
         project["runtime"]["retry_delay_seconds"] = 0.1
         save_yaml(paths.config_file, project)

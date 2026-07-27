@@ -25,6 +25,7 @@ class PackageLayout:
     activity: ctk.CTkLabel
     refresh_button: ctk.CTkButton
     progress: ctk.CTkProgressBar
+    progress_value: ctk.CTkLabel
     rows: dict[str, DependencyRow]
 
 
@@ -60,7 +61,7 @@ def build_package_layout(
         font=ctk.CTkFont(family=FONT_FAMILY, size=10),
         anchor="e",
     )
-    activity.grid(row=0, column=1, padx=12, pady=(11, 2), sticky="ew")
+    activity.grid(row=0, column=1, columnspan=2, padx=12, pady=(11, 2), sticky="ew")
     refresh_button = ctk.CTkButton(
         toolbar,
         text="重新检测",
@@ -71,12 +72,30 @@ def build_package_layout(
         fg_color=ACCENT,
         font=ctk.CTkFont(family=FONT_FAMILY, size=11),
     )
-    refresh_button.grid(row=0, column=2, rowspan=2, padx=14, pady=10)
-    progress = ctk.CTkProgressBar(toolbar, height=4, mode="indeterminate")
-    progress.grid(row=1, column=0, columnspan=2, sticky="ew", padx=16, pady=(5, 10))
+    refresh_button.grid(row=0, column=3, rowspan=2, padx=14, pady=10)
+    progress = ctk.CTkProgressBar(toolbar, height=4, mode="determinate")
+    progress.grid(
+        row=1, column=0, columnspan=2, sticky="ew", padx=(16, 8), pady=(5, 10)
+    )
     progress.set(0)
+    progress_value = ctk.CTkLabel(
+        toolbar,
+        text="0%",
+        width=42,
+        text_color=MUTED,
+        font=ctk.CTkFont(family=FONT_FAMILY, size=10, weight="bold"),
+        anchor="e",
+    )
+    progress_value.grid(row=1, column=2, padx=(0, 6), pady=(2, 7), sticky="e")
     rows = _build_dependency_list(page, statuses, install)
-    return PackageLayout(summary, activity, refresh_button, progress, rows)
+    return PackageLayout(
+        summary,
+        activity,
+        refresh_button,
+        progress,
+        progress_value,
+        rows,
+    )
 
 
 def _build_dependency_list(

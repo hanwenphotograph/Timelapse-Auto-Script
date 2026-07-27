@@ -75,7 +75,11 @@ def resolve_command(primary: str, fallback: str | None = None) -> list[str]:
 
 def _environment_script(name: str) -> str | None:
     """Prefer scripts from the active Python or pipx-managed user directory."""
-    directories = [Path(sys.executable).resolve().parent]
+    executable = Path(sys.executable).expanduser()
+    directories = [executable.parent]
+    resolved_directory = executable.resolve().parent
+    if resolved_directory != executable.parent:
+        directories.append(resolved_directory)
     pipx_bin = os.environ.get("PIPX_BIN_DIR")
     if pipx_bin:
         directories.append(Path(pipx_bin).expanduser())

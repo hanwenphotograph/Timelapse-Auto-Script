@@ -32,6 +32,7 @@ class PackagePage:
         self.activity = layout.activity
         self.refresh_button = layout.refresh_button
         self.progress = layout.progress
+        self.progress_value = layout.progress_value
         self._rows = layout.rows
         self._apply_statuses(self._statuses)
 
@@ -40,9 +41,12 @@ class PackagePage:
             return
         self._set_busy(True, "正在检测依赖…")
 
+        def progress(completed: int, total: int, name: str) -> None:
+            self._after(lambda: self._scan_progress(completed, total, name))
+
         def work() -> None:
             try:
-                statuses = self.manager.inspect()
+                statuses = self.manager.inspect(progress)
             except Exception as exc:
                 self._after(lambda error=exc: self._inspect_finished(None, error))
             else:
@@ -73,9 +77,12 @@ class PackagePage:
         def output(message: str) -> None:
             self._after(lambda value=message: self.activity.configure(text=value[-64:]))
 
+        def progress(value: float) -> None:
+            self._after(lambda: self._set_progress(value))
+
         def work() -> None:
             try:
-                self.manager.install(identifier, output)
+                self.manager.install(identifier, output, progress)
             except Exception as exc:
                 self._after(lambda error=exc: self._install_finished(label, error))
             else:
@@ -90,15 +97,19 @@ class PackagePage:
         statuses: list[DependencyStatus] | None,
         error: Exception | None,
     ) -> None:
-        self._set_busy(False, "")
         if error:
+            self._set_busy(False, "")
             self.activity.configure(text=f"检测失败：{error}")
             self.notify(f"依赖检测失败：{error}", "error")
             return
         assert statuses is not None
         self._statuses = statuses
-        self._apply_statuses(statuses)
+        self._set_busy(False, "")
         self.notify("依赖状态已刷新", "success")
+
+    def _scan_progress(self, completed: int, total: int, name: str) -> None:
+        self._set_progress(completed / total if total else 0)
+        self.activity.configure(text=f"正在检测 {name} · {completed}/{total}")
 
     def _install_finished(self, label: str, error: Exception | None) -> None:
         self._set_busy(False, "")
@@ -114,6 +125,8 @@ class PackagePage:
             self._rows[status.spec.identifier].update_status(status, busy=self._busy)
         if any(item.state == "checking" for item in statuses):
             self.summary.configure(text=f"正在检测 {len(statuses)} 项依赖")
+            if not self._busy:
+                self._set_progress(0)
             return
         ready = sum(item.ready for item in statuses)
         missing_required = sum(
@@ -122,17 +135,21 @@ class PackagePage:
         self.summary.configure(
             text=f"已就绪 {ready} / {len(statuses)} · 必需项未就绪 {missing_required}"
         )
+        if not self._busy:
+            self._set_progress(ready / len(statuses) if statuses else 0)
 
     def _set_busy(self, busy: bool, activity: str) -> None:
         self._busy = busy
         self.activity.configure(text=activity)
         self.refresh_button.configure(state="disabled" if busy else "normal")
         if busy:
-            self.progress.start()
-        else:
-            self.progress.stop()
-            self.progress.set(0)
+            self._set_progress(0)
         self._apply_statuses(self._statuses)
+
+    def _set_progress(self, value: float) -> None:
+        normalized = min(1.0, max(0.0, value))
+        self.progress.set(normalized)
+        self.progress_value.configure(text=f"{normalized:.0%}")
 
     def _after(self, operation: Callable[[], None]) -> None:
         if self._closed:

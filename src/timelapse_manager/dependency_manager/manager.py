@@ -29,9 +29,12 @@ class DependencyManager:
     def placeholders(self) -> list[DependencyStatus]:
         return [DependencyStatus(spec, "checking", "等待检测") for spec in CATALOG]
 
-    def inspect(self) -> list[DependencyStatus]:
+    def inspect(
+        self,
+        on_progress: Callable[[int, int, str], None] | None = None,
+    ) -> list[DependencyStatus]:
         commands = dict(self._commands())
-        statuses = self._inspector.inspect(commands)
+        statuses = self._inspector.inspect(commands, on_progress)
         return [
             replace(
                 status,
@@ -54,6 +57,7 @@ class DependencyManager:
         self,
         identifier: str,
         on_output: Callable[[str], None] | None = None,
+        on_progress: Callable[[float], None] | None = None,
     ) -> None:
         spec = CATALOG_BY_ID.get(identifier)
         if not spec or not spec.action_id:
@@ -61,4 +65,4 @@ class DependencyManager:
         plan = self._installer.plan(spec.action_id, dict(self._commands()))
         if not plan:
             raise DependencyInstallError("当前平台没有可用的自动安装方案")
-        self._installer.execute(plan, on_output)
+        self._installer.execute(plan, on_output, on_progress)

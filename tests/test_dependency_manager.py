@@ -12,8 +12,10 @@ from timelapse_manager.dependency_manager.inspection import DependencyInspector
 from timelapse_manager.dependency_manager.installation import (
     PACKAGE_URLS,
     DependencyInstaller,
+    InstallPlan,
     _console_script_python,
 )
+from timelapse_manager.dependency_manager.progress import InstallProgressTracker
 from timelapse_manager.dependency_manager.sunset_resources import (
     MODEL_NAME,
     MODEL_SIZE,
@@ -92,13 +94,53 @@ class DependencyInspectionTests(unittest.TestCase):
                 return_value=resources,
             ),
         ):
-            statuses = DependencyInspector().inspect({})
+            progress = []
+            statuses = DependencyInspector().inspect(
+                {},
+                lambda completed, total, name: progress.append(
+                    (completed, total, name)
+                ),
+            )
 
         self.assertEqual(statuses[0].spec.identifier, "camera")
         self.assertEqual(statuses[1].spec.parent_id, "camera")
         self.assertEqual(statuses[6].state, "ready")
         self.assertEqual(statuses[7].spec.parent_id, "sunsetscore")
         self.assertEqual(statuses[8].state, "ready")
+        self.assertEqual([item[0] for item in progress], list(range(1, 11)))
+        self.assertTrue(all(item[1] == 10 for item in progress))
+
+
+class InstallProgressTests(unittest.TestCase):
+    def test_generic_installer_percentage_is_reported(self) -> None:
+        tracker = InstallProgressTracker()
+
+        self.assertEqual(tracker.consume("Receiving objects: 42%"), 0.42)
+
+    def test_sunset_downloads_are_weighted_by_artifact_size(self) -> None:
+        megabyte = 1024**2
+        tracker = InstallProgressTracker(
+            (("model.gguf", 100 * megabyte), ("projector.gguf", 50 * megabyte))
+        )
+
+        tracker.consume("开始下载 runtime.zip（50.0 MB）")
+        self.assertAlmostEqual(tracker.consume("下载进度 runtime.zip：50%"), 0.125)
+        self.assertAlmostEqual(tracker.consume("下载完成：runtime.zip"), 0.25)
+        self.assertAlmostEqual(tracker.consume("下载进度 model.gguf：50%"), 0.5)
+        tracker.consume("正在校验：model.gguf")
+        self.assertAlmostEqual(tracker.consume("下载完成：projector.gguf"), 1.0)
+
+    def test_installer_forwards_parsed_progress_and_completion(self) -> None:
+        installer = DependencyInstaller(Path.cwd())
+        plan = InstallPlan(
+            (sys.executable, "-c", "print('Downloading: 25%')"),
+            "test",
+        )
+        values = []
+
+        installer.execute(plan, on_progress=values.append)
+
+        self.assertEqual(values, [0.25, 1.0])
 
 
 class DependencyInstallationTests(unittest.TestCase):

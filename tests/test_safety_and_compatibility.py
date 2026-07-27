@@ -64,12 +64,42 @@ class SafetyAndCompatibilityTests(unittest.TestCase):
                 resolved = resolve_command("workflow-tool")
             self.assertEqual(Path(resolved[0]).resolve(), command.resolve())
 
-    def test_command_installed_by_pipx_does_not_require_shell_path(self) -> None:
+    @unittest.skipIf(os.name == "nt", "POSIX virtual-environment symlink test")
+    def test_command_beside_symlinked_virtualenv_python_is_found(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            command = Path(temp_dir) / "sunsetscore"
+            root = Path(temp_dir)
+            base_python = root / "base" / "python"
+            base_python.parent.mkdir()
+            base_python.touch()
+            scripts = root / "venv" / "bin"
+            scripts.mkdir(parents=True)
+            python = scripts / "python"
+            python.symlink_to(base_python)
+            command = scripts / "sunsetscore"
             command.touch(mode=0o755)
             with (
-                patch.dict(os.environ, {"PIPX_BIN_DIR": temp_dir}),
+                patch.object(sys, "executable", str(python)),
+                patch(
+                    "timelapse_manager.process_utils.shutil.which",
+                    return_value=None,
+                ),
+            ):
+                resolved = resolve_command("sunsetscore")
+            self.assertEqual(Path(resolved[0]).resolve(), command.resolve())
+
+    def test_command_installed_by_pipx_does_not_require_shell_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            scripts = root / "pipx-bin"
+            scripts.mkdir()
+            command = scripts / "sunsetscore"
+            command.touch(mode=0o755)
+            python = root / "active-env" / "bin" / "python"
+            python.parent.mkdir(parents=True)
+            python.touch()
+            with (
+                patch.object(sys, "executable", str(python)),
+                patch.dict(os.environ, {"PIPX_BIN_DIR": str(scripts)}),
                 patch(
                     "timelapse_manager.process_utils.shutil.which",
                     return_value=None,
