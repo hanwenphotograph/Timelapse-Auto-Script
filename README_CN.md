@@ -14,6 +14,7 @@ Timelapse Manager 是一个跨平台 Python 延时摄影任务管理器。无界
 - 支持立即收尾、本轮后收尾、强制停止、重启和删除。
 - 提供经过校验的任务级 YAML，以及 GUI 等宽字体编辑器。
 - 支持浅色、深色和跟随系统外观。
+- 提供带父子依赖状态和快速安装操作的包管理视图。
 - 支持 webhook 文本与图片通知、磁盘空间告警和异常状态恢复。
 - 自动探测 SunsetScore，按间隔执行晚霞评分，并根据结论保留 HDR 照片。
 - 为当前平台生成 Debug 和 Release portable 归档。
@@ -93,6 +94,8 @@ python timelapse.py gui
 ```
 
 在 GUI 中创建定时或 eternal 预设后，任务会立即在后台启动。Manual 任务的必填拍摄字段尚不完整，因此仍会先打开 YAML 编辑器。
+
+“包管理”视图会检测 Camera Timelapse Controller、Bracketlapse、SunsetScore，以及每个外部或托管子依赖。支持的 Python 工具可以从 GUI 直接安装或更新到当前环境，支持的系统工具会调用当前平台的包管理器。安装 SunsetScore 后，还可以准备自动选定的 `llama.cpp` 运行时、Qwen 语言模型和视觉投影模型；该操作约下载 1.6 GB，使用 GPU 运行时时可能占用更多缓存空间。
 
 Windows 可以打开 `start_gui.bat`，macOS 可以打开 `start_gui.command`。源码启动器依次选择当前虚拟环境、`.venv` 和 `venv`，必要时自动创建 `.venv`。debug 包会直接启动捆绑的可执行文件。
 

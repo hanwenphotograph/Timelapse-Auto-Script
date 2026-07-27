@@ -7,6 +7,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -64,12 +65,30 @@ def resolve_command(primary: str, fallback: str | None = None) -> list[str]:
             path = Path(executable).expanduser()
             resolved = str(path.resolve()) if path.is_file() else None
         else:
-            resolved = shutil.which(executable)
+            resolved = _environment_script(executable) or shutil.which(executable)
         if resolved:
             argv[0] = resolved
             return argv
         errors.append(executable)
     raise ProcessError("找不到外部命令: " + " / ".join(errors))
+
+
+def _environment_script(name: str) -> str | None:
+    """Prefer scripts from the active Python or pipx-managed user directory."""
+    directories = [Path(sys.executable).resolve().parent]
+    pipx_bin = os.environ.get("PIPX_BIN_DIR")
+    if pipx_bin:
+        directories.append(Path(pipx_bin).expanduser())
+    directories.append(Path.home() / ".local" / "bin")
+    names = (name, f"{name}.exe") if os.name == "nt" else (name,)
+    for directory in directories:
+        for candidate_name in names:
+            candidate = directory / candidate_name
+            if candidate.is_file() and (
+                os.name == "nt" or os.access(candidate, os.X_OK)
+            ):
+                return str(candidate.resolve())
+    return None
 
 
 def child_creation_flags() -> int:

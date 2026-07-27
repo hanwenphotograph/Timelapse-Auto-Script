@@ -46,6 +46,38 @@ class SafetyAndCompatibilityTests(unittest.TestCase):
         self.assertEqual(Path(resolved[0]).resolve(), Path(sys.executable).resolve())
         self.assertEqual(resolved[1:], ["-c", "print(123)"])
 
+    def test_command_installed_beside_active_python_takes_priority(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            scripts = Path(temp_dir) / "bin"
+            scripts.mkdir()
+            python = scripts / "python"
+            command = scripts / "workflow-tool"
+            python.touch()
+            command.touch(mode=0o755)
+            with (
+                patch.object(sys, "executable", str(python)),
+                patch(
+                    "timelapse_manager.process_utils.shutil.which",
+                    return_value="/global/workflow-tool",
+                ),
+            ):
+                resolved = resolve_command("workflow-tool")
+            self.assertEqual(Path(resolved[0]).resolve(), command.resolve())
+
+    def test_command_installed_by_pipx_does_not_require_shell_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            command = Path(temp_dir) / "sunsetscore"
+            command.touch(mode=0o755)
+            with (
+                patch.dict(os.environ, {"PIPX_BIN_DIR": temp_dir}),
+                patch(
+                    "timelapse_manager.process_utils.shutil.which",
+                    return_value=None,
+                ),
+            ):
+                resolved = resolve_command("sunsetscore")
+            self.assertEqual(Path(resolved[0]).resolve(), command.resolve())
+
     def test_legacy_environment_aliases_are_applied(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = ConfigManager(AppPaths.discover(Path(temp_dir)))

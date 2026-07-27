@@ -15,9 +15,11 @@ from typing import Any
 
 import customtkinter as ctk
 
+from timelapse_manager.dependency_manager import DependencyManager
 from timelapse_manager.service import ManagerService
 from timelapse_manager.task_store import ACTIVE_STATUSES
 from timelapse_manager.ui.dialogs import NewTaskDialog, YamlEditorDialog
+from timelapse_manager.ui.package_page import PackagePage
 from timelapse_manager.ui.progress import compact_timestamp, task_progress_label
 from timelapse_manager.ui.table import ModernTable
 from timelapse_manager.ui.theme import (
@@ -45,6 +47,7 @@ PAGE_META = {
     "overview": ("运行总览", "集中查看任务与后台进程的实时状态"),
     "tasks": ("任务管理", "创建任务并手动控制延时摄影工作流"),
     "processes": ("进程监控", "查看和管理由程序启动的受控进程"),
+    "packages": ("包管理", "检测工作流依赖、子依赖并执行快速安装"),
     "config": ("配置中心", "双向读取、校验和保存项目 YAML 配置"),
     "logs": ("运行日志", "按任务查看最新日志和错误信息"),
 }
@@ -53,6 +56,7 @@ PAGE_META = {
 def build_mode_label() -> str:
     mode = os.environ.get("TIMELAPSE_MANAGER_BUILD_MODE", "debug").lower()
     return "Release" if mode == "release" else "Debug"
+
 
 STATUS_TEXT = {
     "idle": "待启动",
@@ -94,6 +98,10 @@ class TimelapseApp:
         self._config_drafts: dict[str, str] = {}
         self._task_ids: list[str] = []
         self._tables: list[ModernTable] = []
+        self.dependency_manager = DependencyManager(
+            self.service.paths.root,
+            lambda: self.service.config.project["commands"],
+        )
 
         self.status_value = tk.StringVar(value="就绪")
         self.selected_task_value = tk.StringVar(value="尚未选择任务")
@@ -135,6 +143,7 @@ class TimelapseApp:
         self._build_overview_page()
         self._build_tasks_page()
         self._build_processes_page()
+        self._build_packages_page()
         self._build_config_page()
         self._build_logs_page()
         self._build_status_bar()
@@ -186,6 +195,7 @@ class TimelapseApp:
             ("overview", "运行总览"),
             ("tasks", "任务管理"),
             ("processes", "进程监控"),
+            ("packages", "包管理"),
             ("config", "配置中心"),
             ("logs", "运行日志"),
         )
@@ -281,7 +291,7 @@ class TimelapseApp:
         self.refresh_button = ctk.CTkButton(
             header,
             text="刷新",
-            command=self.refresh_all,
+            command=self.refresh_current_page,
             width=82,
             height=38,
             corner_radius=10,
@@ -623,6 +633,14 @@ class TimelapseApp:
         ).grid(row=0, column=3, sticky="e")
         self._update_config_path()
 
+    def _build_packages_page(self) -> None:
+        self.package_page = PackagePage(
+            self.page_frames["packages"],
+            self.root,
+            self.dependency_manager,
+            self._set_status,
+        )
+
     def _build_logs_page(self) -> None:
         page = self.page_frames["logs"]
         page.grid_rowconfigure(1, weight=1)
@@ -709,6 +727,16 @@ class TimelapseApp:
             self.refresh_log()
         elif key == "processes":
             self.refresh_processes()
+        elif key == "packages":
+            self.package_page.refresh()
+
+    def refresh_current_page(self) -> None:
+        if self._active_page == "packages":
+            self.package_page.refresh()
+            return
+        self.refresh_all()
+        if self._active_page == "logs":
+            self.refresh_log()
 
     def _change_appearance(self, label: str) -> None:
         modes = {"跟随系统": "System", "浅色": "Light", "深色": "Dark"}
@@ -1122,7 +1150,7 @@ class TimelapseApp:
     def _periodic_refresh(self) -> None:
         if self._closed:
             return
-        if self._busy == 0:
+        if self._busy == 0 and self._active_page != "packages":
             self.refresh_all()
             if self._active_page == "logs":
                 self.refresh_log()
@@ -1130,4 +1158,5 @@ class TimelapseApp:
 
     def close(self) -> None:
         self._closed = True
+        self.package_page.close()
         self.root.destroy()

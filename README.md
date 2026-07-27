@@ -14,6 +14,7 @@ Tasks continue running after the GUI closes. Reopen the GUI or use the CLI from 
 - Graceful finish, finish-after-current, forced stop, restart, and deletion controls.
 - Per-task YAML with validation and a monospace editor in the GUI.
 - Light, dark, and system appearance modes.
+- Package-management view with nested dependency status and quick installation.
 - Webhook notifications, image notifications, disk-space warnings, and stale-process reconciliation.
 - Automatic SunsetScore detection, sampled sunset scoring, and score-driven HDR retention.
 - Debug and Release portable archives for the current platform.
@@ -93,6 +94,8 @@ python timelapse.py gui
 ```
 
 Scheduled and eternal presets created in the GUI start immediately in the background. Manual tasks open the YAML editor first because their required capture fields are not complete yet.
+
+The **Package Management** view detects Camera Timelapse Controller, Bracketlapse, SunsetScore, and each external or managed child dependency. Supported Python tools can be installed or updated into the active environment directly from the GUI. Platform package managers are used for supported system tools. After SunsetScore is installed, its action can also prepare the selected `llama.cpp` runtime, Qwen language model, and vision projector; this downloads approximately 1.6 GB and may use more cache space for GPU runtimes.
 
 Windows users can open `start_gui.bat`; macOS users can open `start_gui.command`. Source launchers prefer an active virtual environment, then `.venv`, then `venv`, and create `.venv` when necessary. Debug packages launch the bundled executable directly.
 
