@@ -26,7 +26,14 @@ class ConfigAndStoreTests(unittest.TestCase):
         loaded = self.manager.load()
         self.assertEqual(loaded.project["schema_version"], 1)
         self.assertTrue(loaded.auto_root.is_absolute())
+        self.assertEqual(loaded.project["commands"]["sunsetscore"], "sunsetscore")
+        self.assertEqual(loaded.project["sunset_score"]["interval"], 10)
         self.assertEqual(loaded.webhook["enabled"], False)
+
+    def test_invalid_sunset_score_interval_is_rejected(self) -> None:
+        text = self.manager.read_text("project").replace("interval: 10", "interval: 0")
+        with self.assertRaisesRegex(ConfigError, "sunset_score.interval"):
+            self.manager.save_text("project", text)
 
     def test_project_yaml_roundtrip(self) -> None:
         text = self.manager.read_text("project").replace(

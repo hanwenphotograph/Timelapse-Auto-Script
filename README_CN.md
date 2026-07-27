@@ -15,6 +15,7 @@ Timelapse Manager 是一个跨平台 Python 延时摄影任务管理器。无界
 - 提供经过校验的任务级 YAML，以及 GUI 等宽字体编辑器。
 - 支持浅色、深色和跟随系统外观。
 - 支持 webhook 文本与图片通知、磁盘空间告警和异常状态恢复。
+- 自动探测 SunsetScore，按间隔执行晚霞评分，并根据结论保留 HDR 照片。
 - 为当前平台生成 Debug 和 Release portable 归档。
 
 ## 内置预设
@@ -37,6 +38,7 @@ Timelapse Manager 是一个跨平台 Python 延时摄影任务管理器。无界
 - Python 3.10 或更高版本。
 - `camera-timelapse` 可从 `PATH` 调用，或配置为绝对路径。
 - 开启后期处理时需要 `brackerlapse` 或 `bracketlapse`。
+- SunsetScore 0.9.0 或更高版本为可选依赖，检测到后自动启用晚霞评分。
 - GUI 需要当前 Python 安装提供 Tk。
 
 Debian 或 Ubuntu 可以安装 `python3-tk`。macOS 的 Homebrew Python 需要对应版本的公式，例如 Python 3.10 使用 `brew install python-tk@3.10`。
@@ -52,6 +54,22 @@ python -m pip install -r requirements.txt
 ```bash
 python -m pip install -e .
 ```
+
+推荐使用 `pipx` 安装 SunsetScore，使其模型运行环境与本项目隔离：
+
+```bash
+pipx install "git+https://github.com/hanwenphotograph/Sunset-Score.git"
+```
+
+管理器会在任务启动时探测 `sunsetscore --version`。命令不存在、版本输出无效或版本低于 0.9.0 时，本次任务自动停用评分，并完整沿用原有通知与清理流程。任务日志和 `self-test` 都会报告评分是否已自动启用。
+
+## 晚霞评分
+
+所有开启后期处理的 Manual、定时、永久接力和 eternal 批次，都会在 Bracketlapse 成功生成 `hdr_video` 后执行评分。SunsetScore 直接对 `hdr_enfuse` 第一层的照片采样，采样间隔由 `sunset_score.interval` 控制，默认值为 10。
+
+有效结果会先发送评分概述，再发送采样照片中首张最高分图片。概述包含照片数、采样数、失败数、平均分、最高分、晚霞区间和最终清理动作。通知继续遵守现有 webhook 的 `enabled` 与 `push_image` 配置，发送失败只记录日志，不影响任务结果或清理动作。
+
+检测到晚霞时，即使任务清理列表排除了 `hdr_enfuse`，该目录仍会保留。未检测到晚霞时，即使关闭了任务清理，也会删除整个 `hdr_enfuse`。评分完全失败时保留目录并让任务或 eternal 批次失败；部分照片失败但已经检测到晚霞时接受结论，部分失败且未检测到晚霞时按失败处理并安全保留照片。
 
 ## 快速开始
 
@@ -152,7 +170,8 @@ python timelapse.py task start <task-id> --foreground
 - `capture_interval_seconds`
 - `morning.start_at` / `morning.end_at`
 - `dusk.start_at` / `dusk.end_at`
-- `commands.camera` / `commands.bracketlapse`
+- `commands.camera` / `commands.bracketlapse` / `commands.sunsetscore`
+- `sunset_score.interval`
 - `runtime.retry_delay_seconds`
 - `runtime.task_history_retention_days`
 
@@ -228,4 +247,4 @@ python -m unittest discover -s tests -v
 python timelapse.py self-test
 ```
 
-集成测试使用模拟相机和 Bracketlapse，并实际启动后台 worker，覆盖成功与失败接力、优雅控制、清理和 eternal 分批处理。
+集成测试使用模拟相机、Bracketlapse 和 SunsetScore，并实际启动后台 worker，覆盖评分失败、评分驱动清理、成功与失败接力、优雅控制和 eternal 分批处理。

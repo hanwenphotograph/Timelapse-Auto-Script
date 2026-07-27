@@ -15,6 +15,7 @@ from timelapse_manager.config import ConfigManager
 from timelapse_manager.io_utils import now_iso
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.process_utils import process_identity, resolve_command
+from timelapse_manager.sunset_score import SunsetScoreService
 from timelapse_manager.task_store import TaskStore
 from timelapse_manager.webhook import WebhookClient
 
@@ -65,6 +66,12 @@ class TaskRuntime:
             }
         )
         self.store.write_state(self.task_id, self.state)
+        self.sunset_score = SunsetScoreService(
+            self,
+            str(commands["sunsetscore"]),
+            int(self.project["sunset_score"]["interval"]),
+            processing_enabled=bool(self.task["processing"].get("enabled", True)),
+        )
 
     def _create_logger(self, console: bool) -> logging.Logger:
         logger = logging.getLogger(f"timelapse.task.{self.task_id}.{os.getpid()}")

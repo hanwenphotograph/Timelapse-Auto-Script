@@ -18,6 +18,10 @@ commands:
   camera: camera-timelapse
   bracketlapse: brackerlapse
   bracketlapse_fallback: bracketlapse
+  sunsetscore: sunsetscore
+
+sunset_score:
+  interval: 10
 
 runtime:
   state_dir: .timelapse

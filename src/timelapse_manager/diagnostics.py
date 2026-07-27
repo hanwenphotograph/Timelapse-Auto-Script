@@ -12,6 +12,7 @@ from pathlib import Path
 from timelapse_manager.io_utils import load_yaml, save_yaml
 from timelapse_manager.process_utils import resolve_command
 from timelapse_manager.service import ManagerService
+from timelapse_manager.sunset_score.availability import detect_sunset_score
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,17 @@ def run_self_test(service: ManagerService, *, full: bool = False) -> list[CheckR
             results.append(
                 CheckResult("FAIL" if full else "WARN", f"外部命令 {name}", str(exc))
             )
+    sunset = detect_sunset_score(str(commands["sunsetscore"]))
+    if sunset.enabled:
+        results.append(
+            CheckResult(
+                "PASS",
+                "外部命令 SunsetScore",
+                f"{sunset.command[0]}，版本 {sunset.version}",
+            )
+        )
+    else:
+        results.append(CheckResult("WARN", "外部命令 SunsetScore", sunset.reason))
     return results
 
 

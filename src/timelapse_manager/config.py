@@ -32,7 +32,9 @@ DEFAULT_PROJECT_CONFIG: dict[str, Any] = {
         "camera": "camera-timelapse",
         "bracketlapse": "brackerlapse",
         "bracketlapse_fallback": "bracketlapse",
+        "sunsetscore": "sunsetscore",
     },
+    "sunset_score": {"interval": 10},
     "runtime": {
         "state_dir": ".timelapse",
         "tasks_dir": "config/tasks",
@@ -86,9 +88,16 @@ def validate_project_config(data: dict[str, Any]) -> None:
     commands = data.get("commands")
     if not isinstance(commands, dict):
         raise ConfigError("commands 必须是映射")
-    for key in ("camera", "bracketlapse"):
+    for key in ("camera", "bracketlapse", "sunsetscore"):
         if not isinstance(commands.get(key), str) or not commands[key].strip():
             raise ConfigError(f"commands.{key} 不能为空")
+
+    sunset_score = data.get("sunset_score")
+    if not isinstance(sunset_score, dict):
+        raise ConfigError("sunset_score 必须是映射")
+    interval = sunset_score.get("interval")
+    if isinstance(interval, bool) or not isinstance(interval, int) or interval < 1:
+        raise ConfigError("sunset_score.interval 必须是正整数")
 
     runtime = data.get("runtime")
     if not isinstance(runtime, dict):

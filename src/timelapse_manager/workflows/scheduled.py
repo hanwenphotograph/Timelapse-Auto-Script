@@ -225,12 +225,36 @@ class ScheduledWorkflow:
         return self._finish(spec, success)
 
     def _finish(self, spec: WorkSpec, success: bool) -> bool:
+        score_decision = None
+        score_attempted = False
+        protect_hdr = False
+        if success and self.task["processing"].get("enabled", True):
+            score_attempted = self.runtime.sunset_score.enabled
+            protect_hdr = score_attempted
+            try:
+                score_decision = self.runtime.sunset_score.process(
+                    spec.work_dir,
+                    (
+                        f"{spec.label}延时摄影，日期 {spec.start_date}，"
+                        f"时间 {spec.start_at}-{spec.end_at}"
+                    ),
+                )
+            except TaskError as exc:
+                self.runtime.log(f"{spec.label}延时摄影晚霞评分失败: {exc}")
+                success = False
+            else:
+                if score_decision is not None:
+                    protect_hdr = score_decision.retained_hdr
+
         cleanup = self.task["cleanup"]
         if cleanup.get("enabled") and (success or cleanup.get("on_failure")):
             try:
+                keep_directories = list(cleanup["keep_directories"])
+                if protect_hdr and "hdr_enfuse" not in keep_directories:
+                    keep_directories.append("hdr_enfuse")
                 cleanup_work_directory(
                     spec.work_dir,
-                    list(cleanup["keep_directories"]),
+                    keep_directories,
                     self.runtime.log,
                     protected_paths=[self.runtime.paths.root, self.runtime.auto_root],
                 )
@@ -244,7 +268,7 @@ class ScheduledWorkflow:
                 "disk_space_warning",
                 f"磁盘剩余 {remaining:.2f}GB，低于阈值 {threshold:g}GB",
             )
-        if success:
+        if success and score_decision is None and not score_attempted:
             self.runtime.webhook.notify_image(
                 "webhook-image",
                 f"图片推送：{spec.label}延时摄影，日期 {spec.start_date}，时间 {spec.start_at}-{spec.end_at}",

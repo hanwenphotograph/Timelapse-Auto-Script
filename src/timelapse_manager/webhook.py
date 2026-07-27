@@ -69,6 +69,26 @@ class WebhookClient:
         template = str(self.config["image_body"])
         self._send(event, self._render(template, content, encoded, digest))
 
+    def notify_image_path(
+        self,
+        event: str,
+        content: str,
+        source: Path,
+        work_dir: Path,
+    ) -> None:
+        if not self.enabled or not self.config.get("push_image"):
+            return
+        try:
+            image_path = self._compress_image(source, work_dir)
+            image_bytes = image_path.read_bytes()
+        except (OSError, ValueError) as exc:
+            self.log(f"webhook 图片准备失败: {exc}")
+            return
+        encoded = base64.b64encode(image_bytes).decode("ascii")
+        digest = hashlib.md5(image_bytes).hexdigest()  # noqa: S324 - receiver protocol requires MD5
+        template = str(self.config["image_body"])
+        self._send(event, self._render(template, content, encoded, digest))
+
     def _prepare_image(self, work_dir: Path) -> Path:
         hdr_dir = work_dir / "hdr_enfuse"
         extensions = {".jpg", ".jpeg", ".png", ".heic", ".tif", ".tiff"}
@@ -80,6 +100,11 @@ class WebhookClient:
         if not images:
             raise ValueError(f"{hdr_dir} 中没有可用图片")
         source = images[(len(images) - 1) // 2]
+        return self._compress_image(source, work_dir)
+
+    def _compress_image(self, source: Path, work_dir: Path) -> Path:
+        if not source.is_file():
+            raise ValueError(f"图片不存在: {source}")
         post_dir = work_dir / "post_img"
         post_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, post_dir / source.name)

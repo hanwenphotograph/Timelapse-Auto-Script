@@ -15,6 +15,7 @@ Tasks continue running after the GUI closes. Reopen the GUI or use the CLI from 
 - Per-task YAML with validation and a monospace editor in the GUI.
 - Light, dark, and system appearance modes.
 - Webhook notifications, image notifications, disk-space warnings, and stale-process reconciliation.
+- Automatic SunsetScore detection, sampled sunset scoring, and score-driven HDR retention.
 - Debug and Release portable archives for the current platform.
 
 ## Presets
@@ -37,6 +38,7 @@ Only completed recurring-chain history is removed automatically. The default ret
 - Python 3.10 or newer.
 - `camera-timelapse` available on `PATH` or configured with an absolute path.
 - `brackerlapse` or `bracketlapse` available when post-processing is enabled.
+- SunsetScore 0.9.0 or newer is optional and enables automatic sunset scoring when found.
 - Tk supplied by the Python installation for the GUI.
 
 On Debian or Ubuntu, install `python3-tk`. Homebrew Python users on macOS need the matching formula, such as `brew install python-tk@3.10` for Python 3.10.
@@ -52,6 +54,22 @@ For an editable installation and the `timelapse-manager` command:
 ```bash
 python -m pip install -e .
 ```
+
+Install SunsetScore with `pipx` to enable scoring without adding its model runtime to this project's environment:
+
+```bash
+pipx install "git+https://github.com/hanwenphotograph/Sunset-Score.git"
+```
+
+The manager probes `sunsetscore --version` at task startup. A missing command, an invalid version response, or a version below 0.9.0 disables scoring for that task and preserves the previous notification and cleanup flow. The task log and `self-test` output report whether scoring was automatically enabled.
+
+## Sunset Scoring
+
+For every Manual, scheduled, recurring, or eternal batch with post-processing enabled, scoring runs after Bracketlapse has successfully created `hdr_video`. SunsetScore samples the images directly inside `hdr_enfuse` with `sunset_score.interval`, which defaults to 10.
+
+An accepted result sends a text summary followed by the first sampled photo with the highest score. The summary includes image and sample counts, failures, average and maximum scores, sunset ranges, and the selected cleanup action. These notifications still honor the existing webhook `enabled` and `push_image` settings, and delivery failures remain non-fatal.
+
+When SunsetScore detects sunset glow, `hdr_enfuse` is retained even if the task cleanup list excludes it. When no sunset glow is detected, the complete `hdr_enfuse` directory is removed even if task cleanup is disabled. A scoring failure preserves the directory and fails the task or eternal batch. A partial result is accepted when it already detects sunset glow; a partial negative result fails safely and preserves the images.
 
 ## Quick Start
 
@@ -152,7 +170,8 @@ See `config/auto_timelapse.example.yaml` for all project settings. Common fields
 - `capture_interval_seconds`
 - `morning.start_at` / `morning.end_at`
 - `dusk.start_at` / `dusk.end_at`
-- `commands.camera` / `commands.bracketlapse`
+- `commands.camera` / `commands.bracketlapse` / `commands.sunsetscore`
+- `sunset_score.interval`
 - `runtime.retry_delay_seconds`
 - `runtime.task_history_retention_days`
 
@@ -228,4 +247,4 @@ python -m unittest discover -s tests -v
 python timelapse.py self-test
 ```
 
-The integration suite uses fake camera and Bracketlapse commands, including real detached workers, successful and failed recurring handoffs, graceful controls, cleanup, and eternal batch processing.
+The integration suite uses fake camera, Bracketlapse, and SunsetScore commands, including real detached workers, scoring failures, score-driven cleanup, successful and failed recurring handoffs, graceful controls, and eternal batch processing.

@@ -540,17 +540,38 @@ class EternalWorkflow:
         if code != 0:
             self.runtime.log(f"永续批次 {sequence} 处理失败，退出码={code}")
             return False
-        self.runtime.webhook.notify_image(
-            "webhook-image",
-            f"图片推送：永续批次 {sequence}，日期 {data['work_date']}，时间 {data['start_at']}-{data['end_at']}",
-            batch_dir,
-        )
+        score_decision = None
+        score_attempted = self.runtime.sunset_score.enabled
+        try:
+            score_decision = self.runtime.sunset_score.process(
+                batch_dir,
+                (
+                    f"永续批次 {sequence}，日期 {data['work_date']}，"
+                    f"时间 {data['start_at']}-{data['end_at']}"
+                ),
+            )
+        except TaskError as exc:
+            self.runtime.log(f"永续批次 {sequence} 晚霞评分失败: {exc}")
+            return False
+        if score_decision is None and not score_attempted:
+            self.runtime.webhook.notify_image(
+                "webhook-image",
+                f"图片推送：永续批次 {sequence}，日期 {data['work_date']}，时间 {data['start_at']}-{data['end_at']}",
+                batch_dir,
+            )
         cleanup = self.task["cleanup"]
         if cleanup.get("enabled"):
             try:
+                keep_directories = list(cleanup["keep_directories"])
+                if (
+                    score_decision is not None
+                    and score_decision.retained_hdr
+                    and "hdr_enfuse" not in keep_directories
+                ):
+                    keep_directories.append("hdr_enfuse")
                 cleanup_work_directory(
                     batch_dir,
-                    list(cleanup["keep_directories"]),
+                    keep_directories,
                     self.runtime.log,
                     protected_paths=[
                         self.runtime.paths.root,
