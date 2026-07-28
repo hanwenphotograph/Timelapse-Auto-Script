@@ -1,17 +1,20 @@
-"""Webhook notifications compatible with the original YAML templates."""
+"""Webhook notifications using configurable JSON templates."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import shutil
-import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 from PIL import Image
+
+from timelapse_manager.errors import WebhookError
+from timelapse_manager.webhook_test_image import build_test_image
 
 
 class WebhookClient:
@@ -33,22 +36,80 @@ class WebhookClient:
             "__IMGMD5__": image_md5,
         }
         for token, value in values.items():
-            template = template.replace(token, value)
+            escaped = json.dumps(value, ensure_ascii=False)[1:-1]
+            template = template.replace(token, escaped)
         return template
 
-    def _send(self, event: str, body: str) -> None:
-        request = urllib.request.Request(
-            str(self.config["url"]),
-            data=body.encode("utf-8"),
-            headers={"Content-Type": "application/json; charset=utf-8"},
-            method="POST",
-        )
+    def _deliver(self, body: str) -> str:
+        url = self.config.get("url")
+        if not isinstance(url, str) or not url.strip():
+            raise WebhookError("webhook URL 不能为空")
+        self._validate_json_body("body", body)
         try:
+            request = urllib.request.Request(
+                url,
+                data=body.encode("utf-8"),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                method="POST",
+            )
             with urllib.request.urlopen(request, timeout=30) as response:
-                response.read(1)
-            self.log(f"webhook 推送成功: {event}")
-        except (OSError, urllib.error.URLError) as exc:
+                response_body = response.read()
+        except (OSError, ValueError) as exc:
+            raise WebhookError(f"网络请求失败: {exc}") from exc
+        return self._parse_response(response_body)
+
+    @staticmethod
+    def _validate_json_body(name: str, body: str) -> None:
+        try:
+            json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise WebhookError(f"webhook {name} 不是有效 JSON: {exc.msg}") from exc
+
+    @staticmethod
+    def _parse_response(response_body: bytes) -> str:
+        if not response_body:
+            return "HTTP 请求成功"
+        try:
+            payload = json.loads(response_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return "HTTP 请求成功"
+        if not isinstance(payload, dict) or "errcode" not in payload:
+            return "HTTP 请求成功"
+        errcode = payload["errcode"]
+        message = str(payload.get("errmsg") or "未知错误")
+        if errcode not in (0, "0"):
+            raise WebhookError(f"企业微信返回错误 {errcode}: {message}")
+        return message
+
+    def _send(self, event: str, body: str) -> None:
+        try:
+            self._deliver(body)
+        except WebhookError as exc:
             self.log(f"webhook 推送失败: {event}: {exc}")
+        else:
+            self.log(f"webhook 推送成功: {event}")
+
+    def test_push(self, content: str = "Timelapse Manager 测试推送") -> str:
+        text_template = str(self.config.get("body", ""))
+        image_template = str(self.config.get("image_body", ""))
+        if "__CONTENT__" not in text_template:
+            raise WebhookError("webhook body 必须包含 __CONTENT__")
+        for token in ("__IMGBASE64__", "__IMGMD5__"):
+            if token not in image_template:
+                raise WebhookError(f"webhook image_body 必须包含 {token}")
+
+        image_bytes = build_test_image()
+        encoded = base64.b64encode(image_bytes).decode("ascii")
+        digest = hashlib.md5(image_bytes).hexdigest()  # noqa: S324 - receiver protocol requires MD5
+        text_body = self._render(text_template, content)
+        image_body = self._render(image_template, "Webhook 测试图片", encoded, digest)
+        self._validate_json_body("body", text_body)
+        self._validate_json_body("image_body", image_body)
+
+        text_result = self._deliver(text_body)
+        image_result = self._deliver(image_body)
+        self.log("webhook 文本与图片测试推送成功")
+        return f"文本：{text_result}；图片：{image_result}"
 
     def notify(self, event: str, content: str) -> None:
         if not self.enabled:

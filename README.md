@@ -95,6 +95,18 @@ python timelapse.py gui
 
 Scheduled and eternal presets created in the GUI start immediately in the background. Manual tasks open the YAML editor first because their required capture fields are not complete yet.
 
+## Webhook Test Push
+
+Open **Configuration**, switch to **Webhook**, and the **Test Text and Image** button appears in the top toolbar. Testing validates and saves the current editor content, then sends a text message followed by an in-memory JPEG test image. It works independently of the enabled and push_image switches.
+
+The same text and image test is available from the CLI:
+
+```bash
+python timelapse.py config test
+```
+
+A nonzero WeCom errcode is reported as a failure in both the GUI and CLI when present. Regular task notifications still honor enabled and push_image, and message quotes, line breaks, and backslashes are JSON-escaped before delivery.
+
 The **Package Management** view detects Camera Timelapse Controller, Bracketlapse, SunsetScore, and each external or managed child dependency. Supported Python tools can be installed or updated into the active environment directly from the GUI. Platform package managers are used for supported system tools. After SunsetScore is installed, its action can also prepare the selected `llama.cpp` runtime, Qwen language model, and vision projector; this downloads approximately 1.6 GB and may use more cache space for GPU runtimes.
 
 Windows users can open `start_gui.bat`; macOS users can open `start_gui.command`. Source launchers prefer an active virtual environment, then `.venv`, then `venv`, and create `.venv` when necessary. Debug packages launch the bundled executable directly.

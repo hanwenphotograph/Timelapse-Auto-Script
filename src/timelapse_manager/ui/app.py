@@ -587,6 +587,18 @@ class TimelapseApp:
             anchor="e",
         )
         self.config_path_label.grid(row=0, column=1, sticky="e", padx=(12, 16))
+        self.test_webhook_button = action_button(
+            toolbar,
+            "测试文本和图片",
+            self.test_webhook,
+            width=126,
+        )
+        self.test_webhook_button.grid(
+            row=0,
+            column=2,
+            padx=(0, 14),
+            pady=8,
+        )
 
         editor_frame = ctk.CTkFrame(
             page,
@@ -632,6 +644,7 @@ class TimelapseApp:
             font=ctk.CTkFont(family=FONT_FAMILY, size=12),
         ).grid(row=0, column=3, sticky="e")
         self._update_config_path()
+        self._update_config_actions()
 
     def _build_packages_page(self) -> None:
         self.package_page = PackagePage(
@@ -1006,6 +1019,7 @@ class TimelapseApp:
                 return
         self._replace_config_text(self._config_drafts[self._current_config_kind])
         self._update_config_path()
+        self._update_config_actions()
 
     def reload_config(
         self,
@@ -1033,6 +1047,9 @@ class TimelapseApp:
         self.config_text.insert("1.0", content)
 
     def save_config(self) -> None:
+        self._save_current_config(show_confirmation=True)
+
+    def _save_current_config(self, *, show_confirmation: bool) -> bool:
         kind = self._current_config_kind
         content = self.config_text.get("1.0", "end-1c")
         try:
@@ -1040,15 +1057,23 @@ class TimelapseApp:
             self.service.reload()
         except Exception as exc:
             messagebox.showerror("配置保存失败", str(exc), parent=self.root)
-            return
+            return False
         self._config_drafts[kind] = content
         self.refresh_all()
         self._set_status("YAML 已校验并写入磁盘")
-        messagebox.showinfo(
-            "配置已保存",
-            "YAML 已通过校验并写入磁盘。",
-            parent=self.root,
-        )
+        if show_confirmation:
+            messagebox.showinfo(
+                "配置已保存",
+                "YAML 已通过校验并写入磁盘。",
+                parent=self.root,
+            )
+        return True
+
+    def test_webhook(self) -> None:
+        if self._current_config_kind != "webhook":
+            return
+        if self._save_current_config(show_confirmation=False):
+            self._async_action("Webhook 测试推送", self.service.test_webhook)
 
     def _current_config_path(self) -> Path:
         if self._current_config_kind == "project":
@@ -1057,6 +1082,12 @@ class TimelapseApp:
 
     def _update_config_path(self) -> None:
         self.config_path_label.configure(text=str(self._current_config_path()))
+
+    def _update_config_actions(self) -> None:
+        if self._current_config_kind == "webhook":
+            self.test_webhook_button.grid()
+        else:
+            self.test_webhook_button.grid_remove()
 
     def open_config_location(self) -> None:
         self._open_path(self._current_config_path().parent)

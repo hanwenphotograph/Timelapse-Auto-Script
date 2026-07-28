@@ -51,6 +51,10 @@ def _parser() -> argparse.ArgumentParser:
     config_set.add_argument("key", help="例如 morning.start_at")
     config_set.add_argument("value", help="YAML 标量或结构，例如 04:00、true、[a,b]")
     config_set.add_argument("--kind", choices=("project", "webhook"), default="project")
+    config_sub.add_parser(
+        "test",
+        help="使用当前 webhook 配置发送文本和图片测试消息",
+    )
 
     task = commands.add_parser("task", help="创建、启动和控制任务")
     task_sub = task.add_subparsers(dest="task_command", required=True)
@@ -214,6 +218,8 @@ def _handle_config(service: ManagerService, args: argparse.Namespace) -> int:
         save_yaml(path, data)
         service.reload()
         print(f"已更新 {args.kind} 配置: {args.key}")
+    elif args.config_command == "test":
+        print(service.test_webhook())
     return 0
 
 

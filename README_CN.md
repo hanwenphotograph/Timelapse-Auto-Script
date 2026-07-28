@@ -95,6 +95,18 @@ python timelapse.py gui
 
 在 GUI 中创建定时或 eternal 预设后，任务会立即在后台启动。Manual 任务的必填拍摄字段尚不完整，因此仍会先打开 YAML 编辑器。
 
+## Webhook 测试推送
+
+在 GUI 中打开“配置中心”，切换到 Webhook 后，顶部工具栏会显示“测试文本和图片”按钮。测试会先校验并保存编辑器内容，然后依次发送文本和内存生成的 JPEG 测试图片，并且不受 enabled 与 push_image 开关限制。
+
+也可以通过 CLI 发送同样的文本和图片测试消息：
+
+```bash
+python timelapse.py config test
+```
+
+响应包含非零企业微信 errcode 时，GUI 和 CLI 会将其显示为失败。正式任务通知仍遵守 enabled 与 push_image 配置，文本中的引号、换行和反斜杠会在发送前正确转义。
+
 “包管理”视图会检测 Camera Timelapse Controller、Bracketlapse、SunsetScore，以及每个外部或托管子依赖。支持的 Python 工具可以从 GUI 直接安装或更新到当前环境，支持的系统工具会调用当前平台的包管理器。安装 SunsetScore 后，还可以准备自动选定的 `llama.cpp` 运行时、Qwen 语言模型和视觉投影模型；该操作约下载 1.6 GB，使用 GPU 运行时时可能占用更多缓存空间。
 
 Windows 可以打开 `start_gui.bat`，macOS 可以打开 `start_gui.command`。源码启动器依次选择当前虚拟环境、`.venv` 和 `venv`，必要时自动创建 `.venv`。debug 包会直接启动捆绑的可执行文件。

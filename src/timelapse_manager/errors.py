@@ -15,3 +15,7 @@ class TaskError(TimelapseError):
 
 class ProcessError(TimelapseError):
     """External process could not be managed."""
+
+
+class WebhookError(TimelapseError):
+    """A webhook request could not be delivered successfully."""

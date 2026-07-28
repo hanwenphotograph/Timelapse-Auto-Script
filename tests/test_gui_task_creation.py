@@ -44,6 +44,29 @@ class GuiTaskCreationTests(unittest.TestCase):
         self.app._async_action.assert_not_called()
         self.app.service.start_task.assert_not_called()
 
+    def test_webhook_action_saves_before_sending(self) -> None:
+        self.app._current_config_kind = "webhook"
+        self.app._save_current_config = Mock(return_value=True)
+
+        self.app.test_webhook()
+
+        self.app._save_current_config.assert_called_once_with(show_confirmation=False)
+        label, operation = self.app._async_action.call_args.args
+        self.assertEqual(label, "Webhook 测试推送")
+        operation()
+        self.app.service.test_webhook.assert_called_once_with()
+
+    def test_webhook_button_is_only_visible_for_webhook_config(self) -> None:
+        self.app.test_webhook_button = Mock()
+        self.app._current_config_kind = "project"
+
+        self.app._update_config_actions()
+
+        self.app.test_webhook_button.grid_remove.assert_called_once_with()
+        self.app._current_config_kind = "webhook"
+        self.app._update_config_actions()
+        self.app.test_webhook_button.grid.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()

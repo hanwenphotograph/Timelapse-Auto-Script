@@ -24,6 +24,7 @@ from timelapse_manager.process_utils import (
 )
 from timelapse_manager.task_chain import TaskChainManager
 from timelapse_manager.task_store import ACTIVE_STATUSES, TaskStore
+from timelapse_manager.webhook import WebhookClient
 
 
 class ManagerService:
@@ -51,6 +52,12 @@ class ManagerService:
             "tasks_dir": str(self.store.tasks_dir),
             "runtime_dir": str(self.store.runtime_dir),
         }
+
+    def test_webhook(self) -> str:
+        self.reload()
+        client = WebhookClient(self.config.webhook, lambda _message: None)
+        response = client.test_push()
+        return f"Webhook 测试推送成功：{response}"
 
     def create_task(
         self, name: str, preset: str, task_id: str | None = None
