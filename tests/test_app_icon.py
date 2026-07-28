@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -9,7 +8,6 @@ from PIL import Image
 from timelapse_manager.app_icon import (
     application_icon_path,
     apply_application_icon,
-    prepare_application_icon,
 )
 from timelapse_manager import gui
 
@@ -37,45 +35,19 @@ class AppIconTests(unittest.TestCase):
     def test_tk_window_receives_icon_photo(self) -> None:
         root = Mock()
         photo = object()
-        with (
-            patch("timelapse_manager.app_icon.tk.PhotoImage", return_value=photo),
-            patch.object(sys, "platform", "linux"),
+        with patch(
+            "timelapse_manager.app_icon.tk.PhotoImage",
+            return_value=photo,
         ):
             apply_application_icon(root)
 
         root.iconphoto.assert_called_once_with(True, photo)
         self.assertIs(root._timelapse_icon_photo, photo)
 
-    def test_macos_dock_icon_is_applied(self) -> None:
-        root = Mock()
-        with (
-            patch("timelapse_manager.app_icon.tk.PhotoImage"),
-            patch.object(sys, "platform", "darwin"),
-            patch("timelapse_manager.app_icon._set_macos_dock_icon") as set_dock_icon,
-            patch(
-                "timelapse_manager.app_icon._reveal_macos_dock_icon"
-            ) as reveal_dock_icon,
-        ):
-            apply_application_icon(root, reveal_macos_icon=True)
-
-        self.assertEqual(set_dock_icon.call_count, 2)
-        set_dock_icon.assert_called_with(application_icon_path())
-        reveal_dock_icon.assert_called_once_with()
-        root.after.assert_called_once_with(
-            100,
-            set_dock_icon,
-            application_icon_path(),
-        )
-
-    def test_macos_icon_is_prepared_before_tk_root_creation(self) -> None:
+    def test_icon_is_applied_after_tk_root_creation(self) -> None:
         events: list[str] = []
         root = Mock()
         with (
-            patch.object(
-                gui,
-                "prepare_application_icon",
-                side_effect=lambda: events.append("prepare") or True,
-            ),
             patch.object(
                 gui,
                 "apply_base_theme",
@@ -96,36 +68,9 @@ class AppIconTests(unittest.TestCase):
         ):
             gui.launch_gui()
 
-        self.assertEqual(events, ["prepare", "theme", "root", "apply"])
-        apply_icon.assert_called_once_with(
-            root,
-            reveal_macos_icon=True,
-        )
+        self.assertEqual(events, ["theme", "root", "apply"])
+        apply_icon.assert_called_once_with(root)
         root.mainloop.assert_called_once_with()
-
-    def test_prepare_icon_is_a_noop_outside_macos(self) -> None:
-        with (
-            patch.object(sys, "platform", "linux"),
-            patch("timelapse_manager.app_icon._hide_macos_dock_icon") as hide_dock_icon,
-        ):
-            prepared = prepare_application_icon()
-
-        self.assertFalse(prepared)
-        hide_dock_icon.assert_not_called()
-
-    def test_prepare_icon_hides_source_process_on_macos(self) -> None:
-        with (
-            patch.object(sys, "platform", "darwin"),
-            patch.object(sys, "frozen", False, create=True),
-            patch(
-                "timelapse_manager.app_icon._hide_macos_dock_icon",
-                return_value=True,
-            ) as hide_dock_icon,
-        ):
-            prepared = prepare_application_icon()
-
-        self.assertTrue(prepared)
-        hide_dock_icon.assert_called_once_with()
 
 
 if __name__ == "__main__":

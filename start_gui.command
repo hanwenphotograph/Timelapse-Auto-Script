@@ -9,7 +9,6 @@ pause_and_fail() {
     fi
     exit 1
 }
-
 schedule_terminal_close() {
     if [ "$TERM_PROGRAM" != "Apple_Terminal" ] \
         || [ ! -x "/usr/bin/osascript" ]; then
@@ -38,17 +37,14 @@ on run argv
 end run
 APPLESCRIPT
 }
-
 finish_gui() {
     exit_code=$1
     schedule_terminal_close
     exit "$exit_code"
 }
-
 python_version_ready() {
     "$1" -c 'import sys; assert sys.version_info >= (3, 10)' >/dev/null 2>&1
 }
-
 find_homebrew() {
     if command -v brew >/dev/null 2>&1; then
         command -v brew
@@ -60,13 +56,11 @@ find_homebrew() {
         return 1
     fi
 }
-
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
 if [ -z "$SCRIPT_DIR" ] || ! cd "$SCRIPT_DIR"; then
     echo "Unable to locate the Timelapse Manager directory."
     pause_and_fail
 fi
-
 if [ -x "./TimelapseManager" ]; then
     "./TimelapseManager" gui
     finish_gui "$?"
@@ -191,5 +185,16 @@ if ! "$GUI_PYTHON" "$RUNTIME_CHECKER" runtime; then
     pause_and_fail
 fi
 
-"$GUI_PYTHON" "./timelapse.py" gui
-finish_gui "$?"
+SOURCE_APP_LAUNCHER="./src/timelapse_manager/macos_source_app.py"
+if [ ! -f "$SOURCE_APP_LAUNCHER" ]; then
+    echo "The macOS source application launcher was not found: ${SOURCE_APP_LAUNCHER}"
+    pause_and_fail
+fi
+
+"$GUI_PYTHON" "$SOURCE_APP_LAUNCHER" "$SCRIPT_DIR" gui
+exit_code=$?
+if [ "$exit_code" -eq 78 ]; then
+    echo "The macOS source application could not be prepared."
+    pause_and_fail
+fi
+finish_gui "$exit_code"

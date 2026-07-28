@@ -89,8 +89,11 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("schedule_terminal_close", launcher)
         self.assertIn("/usr/bin/nohup /usr/bin/osascript", launcher)
         self.assertIn("close terminalTab", launcher)
+        self.assertIn("macos_source_app.py", launcher)
+        self.assertIn('if [ "$exit_code" -eq 78 ]', launcher)
         self.assertNotIn('exec "./TimelapseManager" gui', launcher)
         self.assertNotIn('exec "$GUI_PYTHON" "./timelapse.py" gui', launcher)
+        self.assertNotIn('"$GUI_PYTHON" "./timelapse.py" gui', launcher)
 
     def test_windows_launcher_does_not_pause_after_gui_exit(self) -> None:
         launcher = (ROOT / "start_gui.bat").read_text(encoding="utf-8")
