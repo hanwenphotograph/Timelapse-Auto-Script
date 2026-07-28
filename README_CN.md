@@ -2,287 +2,175 @@
 
 [English](README.md) | [简体中文](README_CN.md)
 
-![Timelapse Manager 任务与进程状态运行总览](docs/images/timelapse-manager-overview.png)
+![Timelapse Manager 运行总览](docs/images/timelapse-manager-overview.png)
 
-Timelapse Manager 是一个跨平台 Python 延时摄影任务管理器。无界面核心负责拍摄、后期处理、持久化状态和进程控制，CLI 与 GUI 共用同一套管理服务。
+Timelapse Manager 是一个跨平台的延时摄影任务管理器，同时提供 GUI 与 CLI。它把 Camera Timelapse Controller、Bracketlapse、可选的 SunsetScore 分析和消息通知连接成可持久运行的任务流程。
 
-关闭 GUI 后任务仍会继续运行。可以重新打开 GUI，或在另一个终端使用 CLI 查看和控制 Windows、macOS 与 Linux 上的任务。
+关闭 GUI 不会停止后台任务。重新打开程序即可继续查看进度、日志和受控进程。
 
-## 界面预览
+## 主要功能
 
-顶部运行总览与下方配置截图均直接取自使用独立演示工作区运行的 macOS Debug 程序。
+- 创建手动、单次定时、循环定时或持续拍摄任务。
+- 查看任务状态、进度、日志、工作进程和外部子程序。
+- 在后台执行可恢复的拍摄与后期处理流程。
+- 在 GUI 中编辑并校验 YAML 配置。
+- 检查并安装受支持的工作流依赖。
+- 可选发送企业微信文本与图片通知。
 
-### 企业微信 Webhook 配置
+## 运行项目
 
-![Timelapse Manager 企业微信 Webhook 文本与图片配置](docs/images/timelapse-manager-webhook.png)
-
-## 功能
-
-- 持久化任务定义、状态、阶段、进程 PID、启动时间和日志。
-- 监控 worker、`camera-timelapse` 和 Bracketlapse 子进程。
-- 支持手动、单次定时、永久定时和持续归档预设。
-- 支持立即收尾、本轮后收尾、强制停止、重启和删除。
-- 提供经过校验的任务级 YAML，以及 GUI 等宽字体编辑器。
-- 支持浅色、深色和跟随系统外观。
-- 提供带父子依赖状态和快速安装操作的包管理视图。
-- 支持 webhook 文本与图片通知、磁盘空间告警和异常状态恢复。
-- 自动探测 SunsetScore，按间隔执行晚霞评分，并根据结论保留 HDR 照片。
-- 为当前平台生成 Debug 和 Release portable 归档。
-
-## 内置预设
-
-| 预设 | 行为 |
-| --- | --- |
-| `scheduled_once` | 把下一个清晨或黄昏时段展开为一条完整的 Manual 任务。 |
-| `scheduled_loop` | 展开一条完整的 Manual 任务，并在每轮结束后创建新的 Manual 后继。 |
-| `eternal` | 持续拍摄，按完整曝光组分批归档并串行处理。 |
-| `manual` | 由用户填写日期、时间、工作目录和可选拍摄间隔。 |
-
-定时预设只是配置生成器，不是运行模式。任务创建时会写入实际目录、日期、起止时间、拍摄间隔、清理策略和重试延迟。定时任务随后统一从有限 Manual 工作流运行，生成的 YAML 不含 `null`，也不包含无用的 `eternal` 配置。
-
-`scheduled_loop` 由多条有限任务组成。每轮拥有独立 ID、YAML、状态和日志。成功轮立即启动后继；失败轮等待配置的重试延迟后创建并启动后继。任何停止或收尾操作都会禁止继续接力。同一任务链只允许一条活动任务，已有后继的历史节点不能再次启动。
-
-系统只自动清理永久链中已成功完成的历史，默认保留 30 天。失败和停止任务会一直保留，直到用户手动删除。保留策略只删除任务元数据和日志，绝不删除照片或视频。
-
-## 环境要求
+### 环境要求
 
 - Python 3.10 或更高版本。
-- `camera-timelapse` 可从 `PATH` 调用，或配置为绝对路径。
-- 开启后期处理时需要 `brackerlapse` 或 `bracketlapse`。
-- SunsetScore 0.9.0 或更高版本为可选依赖，检测到后自动启用晚霞评分。
-- GUI 需要当前 Python 安装提供 Tk。
+- 当前 Python 安装包含 Tk。
+- 实际拍摄需要 Camera Timelapse Controller。
+- 开启后期处理时需要 Bracketlapse。
 
-Debian 或 Ubuntu 可以安装 `python3-tk`。macOS 的 Homebrew Python 需要对应版本的公式，例如 Python 3.10 使用 `brew install python-tk@3.10`。
+即使尚未安装外部工作流工具，GUI 也可以正常启动。启动后可通过“包管理”检查或安装受支持的依赖。
 
-安装依赖：
+### 下载
 
 ```bash
+git clone https://github.com/hanwenphotograph/Timelapse-Auto-Script.git
+cd Timelapse-Auto-Script
+```
+
+也可以下载仓库 ZIP 并解压。
+
+### macOS
+
+双击 `start_gui.command`。启动器会选择或创建虚拟环境、安装缺少的 Python 包、检查 Tk，并使用 `TL` 程序坞图标启动 GUI。
+
+### Windows
+
+双击 `start_gui.bat`。启动器会完成相同的环境与包检查，然后打开 GUI。
+
+### Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements.txt
-```
-
-以 editable 方式安装并获得 `timelapse-manager` 命令：
-
-```bash
-python -m pip install -e .
-```
-
-推荐使用 `pipx` 安装 SunsetScore，使其模型运行环境与本项目隔离：
-
-```bash
-pipx install "git+https://github.com/hanwenphotograph/Sunset-Score.git"
-```
-
-管理器会在任务启动时探测 `sunsetscore --version`。命令不存在、版本输出无效或版本低于 0.9.0 时，本次任务自动停用评分，并完整沿用原有通知与清理流程。任务日志和 `self-test` 都会报告评分是否已自动启用。
-
-## 晚霞评分
-
-所有开启后期处理的 Manual、定时、永久接力和 eternal 批次，都会在 Bracketlapse 成功生成 `hdr_video` 后执行评分。SunsetScore 直接对 `hdr_enfuse` 第一层的照片采样，采样间隔由 `sunset_score.interval` 控制，默认值为 10。
-
-有效结果会先发送评分概述，再发送采样照片中首张最高分图片。概述包含照片数、采样数、失败数、平均分、最高分、晚霞区间和最终清理动作。通知继续遵守现有 webhook 的 `enabled` 与 `push_image` 配置，发送失败只记录日志，不影响任务结果或清理动作。
-
-检测到晚霞时，即使任务清理列表排除了 `hdr_enfuse`，该目录仍会保留。未检测到晚霞时，即使关闭了任务清理，也会删除整个 `hdr_enfuse`。评分完全失败时保留目录并让任务或 eternal 批次失败；部分照片失败但已经检测到晚霞时接受结论，部分失败且未检测到晚霞时按失败处理并安全保留照片。
-
-## 快速开始
-
-初始化配置和运行目录：
-
-```bash
-python timelapse.py init
-```
-
-生成的 `config/auto_timelapse.yaml` 和 `config/webhook.yaml` 默认被 Git 忽略。配置时间窗口和外部命令后验证安装：
-
-```bash
-python timelapse.py config validate
-python timelapse.py self-test
-```
-
-启动 GUI：
-
-```bash
 python timelapse.py gui
 ```
 
-在 GUI 中创建定时或 eternal 预设后，任务会立即在后台启动。Manual 任务的必填拍摄字段尚不完整，因此仍会先打开 YAML 编辑器。
-
-## Webhook 测试推送
-
-在 GUI 中打开“配置中心”，切换到 Webhook 后，顶部工具栏会显示“测试文本和图片”按钮。测试会先校验并保存编辑器内容，然后依次发送文本和内存生成的 JPEG 测试图片，并且不受 enabled 与 push_image 开关限制。
-
-也可以通过 CLI 发送同样的文本和图片测试消息：
+Debian 或 Ubuntu 缺少 Tk 时先执行：
 
 ```bash
-python timelapse.py config test
+sudo apt install python3-tk
 ```
 
-响应包含非零企业微信 errcode 时，GUI 和 CLI 会将其显示为失败。正式任务通知仍遵守 enabled 与 push_image 配置，文本中的引号、换行和反斜杠会在发送前正确转义。
+如果使用打包后的 Release，macOS 打开 `TimelapseManager.app`，Windows 和 Linux 直接运行 `TimelapseManager` 可执行文件。
 
-“包管理”视图会检测 Camera Timelapse Controller、Bracketlapse、SunsetScore，以及每个外部或托管子依赖。支持的 Python 工具可以从 GUI 直接安装或更新到当前环境，支持的系统工具会调用当前平台的包管理器。安装 SunsetScore 后，还可以准备自动选定的 `llama.cpp` 运行时、Qwen 语言模型和视觉投影模型；该操作约下载 1.6 GB，使用 GPU 运行时时可能占用更多缓存空间。
+## 第一次使用
 
-Windows 可以打开 `start_gui.bat`，macOS 可以打开 `start_gui.command`。源码启动器依次选择当前虚拟环境、`.venv` 和 `venv`，必要时自动创建 `.venv`。macOS 源码启动器会在 `.timelapse/source-launcher` 下生成临时签名的轻量应用，并将其连接至所选虚拟环境，使源码进程从启动开始只有一个原生 `TimelapseManager` Dock 身份。GUI 进程结束后，由启动器打开的命令行窗口会自动关闭；启动前的依赖检查失败仍会保留错误提示。debug 包会直接启动捆绑的可执行文件。
+1. 打开“包管理”，检查 Camera Timelapse Controller 与 Bracketlapse。
+2. 打开“配置中心”，确认拍摄时间、输出目录和外部命令。
+3. 打开“任务管理”，点击“新建任务”，输入名称并选择预设。
+4. 通过“运行总览”“进程监控”和“运行日志”查看任务。
+5. 使用任务操作正常收尾、本轮后收尾或立即停止。
 
-Release 包使用无控制台的 PyInstaller GUI 入口。Windows 和 Linux 直接打开捆绑的 `TimelapseManager` 可执行文件，macOS 直接打开 `TimelapseManager.app`，都不会显示控制台窗口。源码窗口、打包程序和 macOS 程序坞统一使用主界面的蓝底白色 `TL` 图标。macOS 请保持解压后的 `.app` 与同级 `config` 目录在一起，以保留便携配置。
+| 预设 | 适用场景 |
+| --- | --- |
+| `scheduled_once` | 下一个已配置的清晨或黄昏时段。 |
+| `scheduled_loop` | 每轮完成后自动创建下一条清晨或黄昏任务。 |
+| `eternal` | 持续拍摄，并分批归档和处理。 |
+| `manual` | 手动指定目录、日期、时段和间隔。 |
 
-## CLI
+手动任务需要先在 YAML 编辑器中补全参数。定时和 eternal 任务创建后会在后台启动。
 
-列出预设与任务：
+## 常用命令
 
 ```bash
-python timelapse.py preset list
-python timelapse.py task list
-python timelapse.py task list --json
+python timelapse.py init          # 创建配置文件
+python timelapse.py self-test     # 检查 Python 与外部工具
+python timelapse.py gui           # 打开 GUI
+python timelapse.py task list     # 列出任务
+python timelapse.py process list  # 列出受控进程
 ```
 
-创建并启动单次定时任务：
+运行 `python timelapse.py --help`，或在子命令后添加 `--help`，可以查看完整 CLI 帮助。
 
-```bash
-python timelapse.py task create --name "今日自动拍摄" --preset scheduled_once
-python timelapse.py task start <task-id>
-```
+## 可选功能
 
-创建后立即启动永久任务链：
+### 企业微信 Webhook
 
-```bash
-python timelapse.py run --name "日常延时摄影" --preset scheduled_loop
-```
-
-创建完整 Manual 任务：
-
-```bash
-python timelapse.py task create \
-  --name "手动测试" \
-  --preset manual \
-  --work-dir ./output/manual \
-  --start-date 2026-07-22 \
-  --start-at 03:00 \
-  --end-date 2026-07-22 \
-  --end-at 09:00 \
-  --interval 6
-```
-
-查看任务、日志和受控进程：
-
-```bash
-python timelapse.py task show <task-id>
-python timelapse.py task logs <task-id> --follow
-python timelapse.py process list
-```
-
-控制任务：
-
-```bash
-python timelapse.py task finish <task-id>
-python timelapse.py task finish-after-current <task-id>
-python timelapse.py task stop <task-id>
-python timelapse.py task restart <task-id>
-```
-
-`finish` 会结束当前拍摄并处理可用素材。`finish-after-current` 会等待当前有限任务或 eternal 批次结束。`stop` 会终止 worker 和全部受控子进程。这三种操作都会终止永久链接力。
-
-在当前终端运行选定任务：
-
-```bash
-python timelapse.py task start <task-id> --foreground
-```
-
-永久链只有选定轮次在前台运行，后继任务会作为普通后台任务启动。
-
-## 配置
-
-完整项目配置见 `config/auto_timelapse.example.yaml`。常用字段包括：
-
-- `auto_root`
-- `capture_interval_seconds`
-- `morning.start_at` / `morning.end_at`
-- `dusk.start_at` / `dusk.end_at`
-- `commands.camera` / `commands.bracketlapse` / `commands.sunsetscore`
-- `sunset_score.interval`
-- `runtime.retry_delay_seconds`
-- `runtime.task_history_retention_days`
-
-可以从 CLI 设置任意点分隔字段：
-
-```bash
-python timelapse.py config set morning.start_at "'04:00'"
-python timelapse.py config set runtime.task_history_retention_days 30
-```
-
-展开后的永久任务包含不可变链身份和可编辑的接力开关：
+打开“配置中心”并选择“Webhook”，填写机器人地址和企业微信模板：
 
 ```yaml
-schema_version: 2
-preset: manual
-capture:
-  work_dir: /absolute/path/2026-07-22/0300-0900
-  start_date: '2026-07-22'
-  start_at: '03:00'
-  end_date: '2026-07-22'
-  end_at: '09:00'
-  interval_seconds: 6
-continuation:
-  enabled: true
-  chain_id: scheduled-loop-...
-  chain_name: 日常延时摄影
-  sequence: 1
-  source_preset: scheduled_loop
+enabled: false
+url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+body: '{"msgtype":"text","text":{"content":"__CONTENT__"}}'
+push_image: true
+image_body: '{"msgtype":"image","image":{"base64":"__IMGBASE64__","md5":"__IMGMD5__"}}'
 ```
 
-在空闲链叶子启动前把 `continuation.enabled` 改为 `false`，可以只运行当前轮。链身份、序号和前驱字段不可编辑。运行中的任务 YAML 也不能修改。
+点击“测试文本和图片”会先校验并保存编辑器内容，再依次发送两条测试消息。即使正式通知尚未启用，也可以执行测试。
 
-旧 `scheduled_once` 和 `scheduled_loop` 任务会在空闲状态下首次加载时完成一次性迁移。活动中的旧任务保持不变，直到进入终态后再迁移。
+![企业微信 Webhook 配置](docs/images/timelapse-manager-webhook.png)
 
-## 运行数据
+### SunsetScore
 
-任务状态默认位于 `.timelapse/tasks/<task-id>/`，其中包含 `state.json`、`task.log` 和控制队列。写入过程使用临时文件、原子替换和进程感知锁。
+SunsetScore 0.9.0 或更高版本可以抽样分析处理后的照片并识别晚霞。检测到晚霞时保留 `hdr_enfuse`，未检测到时删除该目录；分析失败时保留照片并让任务安全失败。可以从“包管理”安装或准备依赖，也可以单独使用 `pipx` 安装 CLI。
 
-Eternal 任务把暂存数据和跨平台 YAML 队列放在 `<auto_root>/.eternal/`。处理失败的清单会保留到下次运行重试。
+### 界面外观
 
-## 打包
+使用侧边栏底部的控件切换跟随系统、浅色或深色外观。
 
-PyInstaller 不支持交叉编译，因此需要在每个目标系统上分别构建：
+## 配置字段
 
-图标资源由同一脚本生成；调整品牌视觉后可统一重建 PNG、ICO 和 ICNS：
+GUI 会自动创建 `config/auto_timelapse.yaml` 和 `config/webhook.yaml`，同目录提供了示例文件。
 
-```bash
-python scripts/generate_icons.py
-```
+| 项目配置字段 | 含义 |
+| --- | --- |
+| `schema_version` | 配置格式版本，通常无需修改。 |
+| `auto_root` | 定时与持续任务的基础输出目录。 |
+| `capture_interval_seconds` | 拍摄组之间的默认间隔。 |
+| `watch_quiet_seconds` | 目录保持不变多久后开始处理。 |
+| `disk_space_warning_threshold_gb` | 剩余空间告警阈值，`0` 表示关闭。 |
+| `morning.start_at` / `morning.end_at` | 清晨定时时段。 |
+| `dusk.start_at` / `dusk.end_at` | 黄昏定时时段。 |
+| `commands.camera` | Camera Timelapse Controller 命令或绝对路径。 |
+| `commands.bracketlapse` | Bracketlapse 主命令。 |
+| `commands.bracketlapse_fallback` | Bracketlapse 备用名称或路径。 |
+| `commands.sunsetscore` | SunsetScore 命令或绝对路径。 |
+| `sunset_score.interval` | 每隔多少张处理后照片进行一次评分。 |
+| `runtime.state_dir` / `runtime.tasks_dir` | 运行状态与任务定义目录。 |
+| `runtime.poll_interval_seconds` | worker 检查控制指令的间隔。 |
+| `runtime.startup_probe_seconds` | 新 worker 报告启动状态的等待时间。 |
+| `runtime.stop_timeout_seconds` | 强制终止前等待正常停止的时间。 |
+| `runtime.retry_delay_seconds` | 循环任务失败后的重试延迟。 |
+| `runtime.task_history_retention_days` | 已完成循环任务历史的保留天数。 |
+| `eternal.batch_groups` | 每个持续任务批次包含的完整曝光组数量。 |
+| `eternal.images_per_group` | 每个曝光组预期包含的照片数量。 |
+| `eternal.queue_poll_seconds` | 持续任务队列的检查间隔。 |
+| `eternal.archive_retry_seconds` | 归档失败后的重试延迟。 |
+
+| Webhook 字段 | 含义 |
+| --- | --- |
+| `enabled` | 启用正式任务通知。 |
+| `url` | 企业微信机器人 Webhook 地址。 |
+| `body` | 包含 `__CONTENT__` 的文本 JSON 模板。 |
+| `push_image` | 在文本通知后继续发送任务图片。 |
+| `image_body` | 包含 `__IMGBASE64__` 和 `__IMGMD5__` 的图片 JSON 模板。 |
+
+## 数据与安全
+
+- 任务定义保存在 `config/tasks/`。
+- 运行状态和日志保存在 `.timelapse/tasks/`。
+- 删除任务元数据不会删除已拍摄的照片或视频。
+- 清理策略可能删除任务工作目录中未保留的内容，SunsetScore 也可能删除 `hdr_enfuse`，请先用少量样例素材验证流程。
+
+## 开发与打包
 
 ```bash
 python -m pip install -r requirements-dev.txt
+python -m unittest discover -s tests -v
 python scripts/build_debug.py
-```
-
-Debug 归档输出到：
-
-```text
-bin/Debug-Archives/TimelapseManager-<win|mac|linux>-debug-portable-<yymmdd-hhmmss>.zip
-```
-
-构建不显示控制台窗口的 Release GUI 包：
-
-```bash
 python scripts/build_release.py
 ```
 
-Release 归档输出到：
-
-```text
-bin/Release-Archives/TimelapseManager-<win|mac|linux>-release-portable-<yymmdd-hhmmss>.zip
-```
-
-## 开发与测试
-
-```bash
-python -m pip install -e .
-python -m unittest discover -s tests -v
-python timelapse.py self-test
-```
-
-集成测试使用模拟相机、Bracketlapse 和 SunsetScore，并实际启动后台 worker，覆盖评分失败、评分驱动清理、成功与失败接力、优雅控制和 eternal 分批处理。
-
 ## 程序图标
-
-源码窗口、打包程序和 macOS 程序坞统一使用蓝底白字的圆角 `TL` 图标。
 
 <p align="center">
   <img src="src/timelapse_manager/assets/timelapse-manager.png" alt="Timelapse Manager TL 应用图标" width="128" height="128">

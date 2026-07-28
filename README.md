@@ -2,287 +2,175 @@
 
 [English](README.md) | [简体中文](README_CN.md)
 
-![Timelapse Manager runtime overview showing task and process status](docs/images/timelapse-manager-overview.png)
+![Timelapse Manager runtime overview](docs/images/timelapse-manager-overview.png)
 
-Timelapse Manager is a cross-platform Python application for creating, running, and monitoring timelapse capture tasks. Its headless core owns capture, post-processing, persistent state, and process control; the CLI and GUI use the same management service.
+Timelapse Manager is a cross-platform GUI and CLI for scheduling, running, and monitoring timelapse capture workflows. It connects Camera Timelapse Controller, Bracketlapse, optional SunsetScore analysis, and notifications in one persistent task manager.
 
-Tasks continue running after the GUI closes. Reopen the GUI or use the CLI from another terminal to inspect and control them on Windows, macOS, or Linux.
+Closing the GUI does not stop background tasks. Reopen it at any time to inspect progress, logs, and processes.
 
-## Interface
+## Main Features
 
-The overview above and configuration screenshot below are captured directly from the macOS Debug application with an isolated demo workspace.
+- Create manual, one-time scheduled, recurring, or continuous capture tasks.
+- Monitor task status, progress, logs, worker processes, and child tools.
+- Run capture and post-processing as restartable background workflows.
+- Edit validated YAML configuration from the GUI.
+- Inspect and install supported workflow dependencies.
+- Send optional WeCom text and image notifications.
 
-### WeCom Webhook Configuration
+## Run the Project
 
-![Timelapse Manager WeCom webhook text and image configuration](docs/images/timelapse-manager-webhook.png)
-
-## Features
-
-- Persistent task definitions, statuses, phases, process IDs, start times, and logs.
-- Process monitoring for workers, `camera-timelapse`, and Bracketlapse children.
-- Manual, one-shot scheduled, recurring scheduled, and continuous archive presets.
-- Graceful finish, finish-after-current, forced stop, restart, and deletion controls.
-- Per-task YAML with validation and a monospace editor in the GUI.
-- Light, dark, and system appearance modes.
-- Package-management view with nested dependency status and quick installation.
-- Webhook notifications, image notifications, disk-space warnings, and stale-process reconciliation.
-- Automatic SunsetScore detection, sampled sunset scoring, and score-driven HDR retention.
-- Debug and Release portable archives for the current platform.
-
-## Presets
-
-| Preset | Behavior |
-| --- | --- |
-| `scheduled_once` | Materializes the next morning or dusk slot as one complete Manual task. |
-| `scheduled_loop` | Materializes one complete Manual task and creates a new Manual successor after every round. |
-| `eternal` | Captures continuously, archives complete exposure groups in batches, and processes batches serially. |
-| `manual` | Leaves the date, time, working directory, and optional interval for the user to configure. |
-
-Scheduled presets are configuration generators, not runtime modes. Their task YAML is written at creation time with an actual directory, dates, times, interval, cleanup behavior, and retry delay. Scheduled task files therefore run through the same finite Manual workflow and contain no `null` values or unused `eternal` settings.
-
-A `scheduled_loop` is a chain of finite tasks. Each round has its own ID, YAML, state, and log. A successful round starts its successor immediately; a failed round waits for its configured retry delay before creating and starting a successor. Any stop or finish action prevents further handoff. A chain permits only one active task and completed historical nodes cannot be restarted after they have a successor.
-
-Only completed recurring-chain history is removed automatically. The default retention is 30 days; failed and stopped tasks remain until manually deleted. Retention removes task metadata and logs, never captured photos or videos.
-
-## Requirements
+### Requirements
 
 - Python 3.10 or newer.
-- `camera-timelapse` available on `PATH` or configured with an absolute path.
-- `brackerlapse` or `bracketlapse` available when post-processing is enabled.
-- SunsetScore 0.9.0 or newer is optional and enables automatic sunset scoring when found.
-- Tk supplied by the Python installation for the GUI.
+- Tk support in the selected Python installation.
+- Camera Timelapse Controller for real capture.
+- Bracketlapse when post-processing is enabled.
 
-On Debian or Ubuntu, install `python3-tk`. Homebrew Python users on macOS need the matching formula, such as `brew install python-tk@3.10` for Python 3.10.
+The GUI can start before the external workflow tools are installed. Use **包管理 (Package Management)** after startup to inspect or install supported dependencies.
 
-Install dependencies:
+### Download
 
 ```bash
+git clone https://github.com/hanwenphotograph/Timelapse-Auto-Script.git
+cd Timelapse-Auto-Script
+```
+
+Downloading and extracting the repository ZIP also works.
+
+### macOS
+
+Double-click `start_gui.command`. It selects or creates a virtual environment, installs missing Python packages, checks Tk, and starts the GUI with the `TL` Dock icon.
+
+### Windows
+
+Double-click `start_gui.bat`. It performs the same environment and package checks before starting the GUI.
+
+### Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements.txt
-```
-
-For an editable installation and the `timelapse-manager` command:
-
-```bash
-python -m pip install -e .
-```
-
-Install SunsetScore with `pipx` to enable scoring without adding its model runtime to this project's environment:
-
-```bash
-pipx install "git+https://github.com/hanwenphotograph/Sunset-Score.git"
-```
-
-The manager probes `sunsetscore --version` at task startup. A missing command, an invalid version response, or a version below 0.9.0 disables scoring for that task and preserves the previous notification and cleanup flow. The task log and `self-test` output report whether scoring was automatically enabled.
-
-## Sunset Scoring
-
-For every Manual, scheduled, recurring, or eternal batch with post-processing enabled, scoring runs after Bracketlapse has successfully created `hdr_video`. SunsetScore samples the images directly inside `hdr_enfuse` with `sunset_score.interval`, which defaults to 10.
-
-An accepted result sends a text summary followed by the first sampled photo with the highest score. The summary includes image and sample counts, failures, average and maximum scores, sunset ranges, and the selected cleanup action. These notifications still honor the existing webhook `enabled` and `push_image` settings, and delivery failures remain non-fatal.
-
-When SunsetScore detects sunset glow, `hdr_enfuse` is retained even if the task cleanup list excludes it. When no sunset glow is detected, the complete `hdr_enfuse` directory is removed even if task cleanup is disabled. A scoring failure preserves the directory and fails the task or eternal batch. A partial result is accepted when it already detects sunset glow; a partial negative result fails safely and preserves the images.
-
-## Quick Start
-
-Initialize configuration and runtime directories:
-
-```bash
-python timelapse.py init
-```
-
-The generated `config/auto_timelapse.yaml` and `config/webhook.yaml` files are ignored by Git. Configure schedule windows and external commands, then validate the installation:
-
-```bash
-python timelapse.py config validate
-python timelapse.py self-test
-```
-
-Start the GUI:
-
-```bash
 python timelapse.py gui
 ```
 
-Scheduled and eternal presets created in the GUI start immediately in the background. Manual tasks open the YAML editor first because their required capture fields are not complete yet.
-
-## Webhook Test Push
-
-Open **Configuration**, switch to **Webhook**, and the **Test Text and Image** button appears in the top toolbar. Testing validates and saves the current editor content, then sends a text message followed by an in-memory JPEG test image. It works independently of the enabled and push_image switches.
-
-The same text and image test is available from the CLI:
+On Debian or Ubuntu, install Tk first when needed:
 
 ```bash
-python timelapse.py config test
+sudo apt install python3-tk
 ```
 
-A nonzero WeCom errcode is reported as a failure in both the GUI and CLI when present. Regular task notifications still honor enabled and push_image, and message quotes, line breaks, and backslashes are JSON-escaped before delivery.
+If you use a packaged Release build, open `TimelapseManager.app` on macOS or the `TimelapseManager` executable on Windows and Linux.
 
-The **Package Management** view detects Camera Timelapse Controller, Bracketlapse, SunsetScore, and each external or managed child dependency. Supported Python tools can be installed or updated into the active environment directly from the GUI. Platform package managers are used for supported system tools. After SunsetScore is installed, its action can also prepare the selected `llama.cpp` runtime, Qwen language model, and vision projector; this downloads approximately 1.6 GB and may use more cache space for GPU runtimes.
+## First Use
 
-Windows users can open `start_gui.bat`; macOS users can open `start_gui.command`. Source launchers prefer an active virtual environment, then `.venv`, then `venv`, and create `.venv` when necessary. On macOS, the source launcher creates an ad-hoc-signed lightweight application under `.timelapse/source-launcher` and links it to the selected environment. This gives the source process one native `TimelapseManager` Dock identity from startup. Command windows opened by the launcher close automatically after the GUI process exits; pre-launch dependency failures remain visible. Debug packages launch the bundled executable directly.
+1. Open **包管理 (Package Management)** and check Camera Timelapse Controller and Bracketlapse.
+2. Open **配置中心 (Configuration)** to review capture times, output location, and external commands.
+3. Open **任务管理 (Task Management)**, select **新建任务 (New Task)**, enter a name, and choose a preset.
+4. Use **运行总览 (Runtime Overview)**, **进程监控 (Process Monitoring)**, and **运行日志 (Logs)** to follow the task.
+5. Use the task actions to finish gracefully, finish after the current round, or stop immediately.
 
-Release packages are built with a windowed PyInstaller entry point. On Windows and Linux, launch the bundled `TimelapseManager` executable directly; on macOS, open `TimelapseManager.app`. Neither Release entry point opens a console window. Source windows, packaged applications, and the macOS Dock use the blue and white `TL` icon from the main interface. Keep the extracted macOS `.app` beside its bundled `config` directory so portable configuration remains available.
+| Preset | Use it for |
+| --- | --- |
+| `scheduled_once` | The next configured morning or dusk window. |
+| `scheduled_loop` | A new morning or dusk task after every completed round. |
+| `eternal` | Continuous capture with batched archive and processing. |
+| `manual` | A specific directory, date, time range, and interval. |
 
-## CLI
+Manual tasks open the YAML editor before they can start. Scheduled and eternal tasks start in the background after creation.
 
-List presets and tasks:
+## Useful Commands
 
 ```bash
-python timelapse.py preset list
-python timelapse.py task list
-python timelapse.py task list --json
+python timelapse.py init          # create configuration files
+python timelapse.py self-test     # check Python and external tools
+python timelapse.py gui           # open the GUI
+python timelapse.py task list     # list tasks
+python timelapse.py process list  # list managed processes
 ```
 
-Create and start a one-shot scheduled task:
+Run `python timelapse.py --help` or add `--help` after a subcommand for the complete CLI reference.
 
-```bash
-python timelapse.py task create --name "Today's capture" --preset scheduled_once
-python timelapse.py task start <task-id>
-```
+## Optional Features
 
-Create and immediately start a recurring chain:
+### WeCom Webhook
 
-```bash
-python timelapse.py run --name "Daily timelapse" --preset scheduled_loop
-```
-
-Create a fully specified Manual task:
-
-```bash
-python timelapse.py task create \
-  --name "Manual test" \
-  --preset manual \
-  --work-dir ./output/manual \
-  --start-date 2026-07-22 \
-  --start-at 03:00 \
-  --end-date 2026-07-22 \
-  --end-at 09:00 \
-  --interval 6
-```
-
-Inspect tasks, logs, and managed processes:
-
-```bash
-python timelapse.py task show <task-id>
-python timelapse.py task logs <task-id> --follow
-python timelapse.py process list
-```
-
-Control a task:
-
-```bash
-python timelapse.py task finish <task-id>
-python timelapse.py task finish-after-current <task-id>
-python timelapse.py task stop <task-id>
-python timelapse.py task restart <task-id>
-```
-
-`finish` ends the current capture and processes usable material. `finish-after-current` waits for the current finite task or eternal batch. `stop` terminates the worker and all managed children. All three actions also end recurring-chain handoff.
-
-Run the selected task in the current terminal:
-
-```bash
-python timelapse.py task start <task-id> --foreground
-```
-
-For recurring chains, only the selected round stays in the foreground. Its successor starts as a normal background task.
-
-## Configuration
-
-See `config/auto_timelapse.example.yaml` for all project settings. Common fields include:
-
-- `auto_root`
-- `capture_interval_seconds`
-- `morning.start_at` / `morning.end_at`
-- `dusk.start_at` / `dusk.end_at`
-- `commands.camera` / `commands.bracketlapse` / `commands.sunsetscore`
-- `sunset_score.interval`
-- `runtime.retry_delay_seconds`
-- `runtime.task_history_retention_days`
-
-Set any dotted field from the CLI:
-
-```bash
-python timelapse.py config set morning.start_at "'04:00'"
-python timelapse.py config set runtime.task_history_retention_days 30
-```
-
-A materialized recurring task includes immutable chain identity and an editable handoff switch:
+Open **配置中心 (Configuration)**, select **Webhook**, and provide a bot URL plus WeCom-compatible templates:
 
 ```yaml
-schema_version: 2
-preset: manual
-capture:
-  work_dir: /absolute/path/2026-07-22/0300-0900
-  start_date: '2026-07-22'
-  start_at: '03:00'
-  end_date: '2026-07-22'
-  end_at: '09:00'
-  interval_seconds: 6
-continuation:
-  enabled: true
-  chain_id: scheduled-loop-...
-  chain_name: Daily timelapse
-  sequence: 1
-  source_preset: scheduled_loop
+enabled: false
+url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+body: '{"msgtype":"text","text":{"content":"__CONTENT__"}}'
+push_image: true
+image_body: '{"msgtype":"image","image":{"base64":"__IMGBASE64__","md5":"__IMGMD5__"}}'
 ```
 
-Set `continuation.enabled` to `false` before starting an idle chain leaf to run it only once. Chain identity, sequence, and predecessor fields cannot be edited. Running task YAML is locked against changes.
+Use **测试文本和图片 (Test Text and Image)** to validate and save the editor content, then send both test messages. Testing works even while regular notifications are disabled.
 
-Legacy `scheduled_once` and `scheduled_loop` task files are migrated once when loaded while inactive. Active legacy tasks are left untouched until they reach a terminal state.
+![WeCom webhook configuration](docs/images/timelapse-manager-webhook.png)
 
-## Runtime Data
+### SunsetScore
 
-Task state defaults to `.timelapse/tasks/<task-id>/`, containing `state.json`, `task.log`, and queued controls. Writes use temporary files, atomic replacement, and process-aware locks.
+SunsetScore 0.9.0 or newer can sample processed photos and detect sunset glow. Positive results retain `hdr_enfuse`; negative results remove it; analysis failures preserve the photos and fail the task safely. Install or prepare it from **包管理 (Package Management)**, or install the CLI separately with `pipx`.
 
-Eternal tasks store staging data and portable YAML queues under `<auto_root>/.eternal/`. Failed processing manifests remain available for retry on the next run.
+### Appearance
 
-## Packaging
+Use the control at the bottom of the sidebar to choose system, light, or dark appearance.
 
-Build on each target operating system because PyInstaller does not cross-compile:
+## Configuration Reference
 
-All icon formats come from one generator. Rebuild the PNG, ICO, and ICNS assets after changing the brand artwork:
+The GUI creates `config/auto_timelapse.yaml` and `config/webhook.yaml` automatically. Example files are available beside them.
 
-```bash
-python scripts/generate_icons.py
-```
+| Project field | Meaning |
+| --- | --- |
+| `schema_version` | Configuration format version; normally leave it unchanged. |
+| `auto_root` | Base directory for scheduled and continuous output. |
+| `capture_interval_seconds` | Default delay between capture groups. |
+| `watch_quiet_seconds` | Time a directory must remain unchanged before processing. |
+| `disk_space_warning_threshold_gb` | Free-space warning threshold; `0` disables it. |
+| `morning.start_at` / `morning.end_at` | Morning scheduling window. |
+| `dusk.start_at` / `dusk.end_at` | Dusk scheduling window. |
+| `commands.camera` | Camera Timelapse Controller command or absolute path. |
+| `commands.bracketlapse` | Primary Bracketlapse command. |
+| `commands.bracketlapse_fallback` | Fallback spelling or path for Bracketlapse. |
+| `commands.sunsetscore` | SunsetScore command or absolute path. |
+| `sunset_score.interval` | Score every Nth processed photo. |
+| `runtime.state_dir` / `runtime.tasks_dir` | Runtime state and task-definition locations. |
+| `runtime.poll_interval_seconds` | Worker control polling interval. |
+| `runtime.startup_probe_seconds` | Time allowed for a new worker to report startup. |
+| `runtime.stop_timeout_seconds` | Graceful stop timeout before forced termination. |
+| `runtime.retry_delay_seconds` | Delay before a failed recurring task retries. |
+| `runtime.task_history_retention_days` | Retention for completed recurring-task history. |
+| `eternal.batch_groups` | Complete exposure groups per continuous batch. |
+| `eternal.images_per_group` | Expected exposures in each group. |
+| `eternal.queue_poll_seconds` | Continuous queue polling interval. |
+| `eternal.archive_retry_seconds` | Delay before an archive operation retries. |
 
-```bash
-python -m pip install -r requirements-dev.txt
-python scripts/build_debug.py
-```
+| Webhook field | Meaning |
+| --- | --- |
+| `enabled` | Enable normal task notifications. |
+| `url` | WeCom bot webhook URL. |
+| `body` | Text JSON template containing `__CONTENT__`. |
+| `push_image` | Send task images after text notifications. |
+| `image_body` | Image JSON template containing `__IMGBASE64__` and `__IMGMD5__`. |
 
-Debug archives are written to:
+## Data and Safety
 
-```text
-bin/Debug-Archives/TimelapseManager-<win|mac|linux>-debug-portable-<yymmdd-hhmmss>.zip
-```
-
-Build a Release GUI package without a console window:
-
-```bash
-python scripts/build_release.py
-```
-
-Release archives are written to:
-
-```text
-bin/Release-Archives/TimelapseManager-<win|mac|linux>-release-portable-<yymmdd-hhmmss>.zip
-```
+- Task definitions are stored in `config/tasks/`.
+- Runtime state and logs are stored in `.timelapse/tasks/`.
+- Deleting task metadata does not delete captured photos or videos.
+- Cleanup rules can remove unreserved content from a task working directory, and SunsetScore can remove `hdr_enfuse`; test a workflow with sample material first.
 
 ## Development
 
 ```bash
-python -m pip install -e .
+python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
-python timelapse.py self-test
+python scripts/build_debug.py
+python scripts/build_release.py
 ```
 
-The integration suite uses fake camera, Bracketlapse, and SunsetScore commands, including real detached workers, scoring failures, score-driven cleanup, successful and failed recurring handoffs, graceful controls, and eternal batch processing.
-
 ## Application Icon
-
-The blue and white rounded `TL` mark is used by source windows, packaged executables, and the macOS Dock.
 
 <p align="center">
   <img src="src/timelapse_manager/assets/timelapse-manager.png" alt="Timelapse Manager TL application icon" width="128" height="128">
