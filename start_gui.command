@@ -10,6 +10,41 @@ pause_and_fail() {
     exit 1
 }
 
+schedule_terminal_close() {
+    if [ "$TERM_PROGRAM" != "Apple_Terminal" ] \
+        || [ ! -x "/usr/bin/osascript" ]; then
+        return
+    fi
+    terminal_tty=$(tty 2>/dev/null) || return
+    /usr/bin/nohup /usr/bin/osascript - "$terminal_tty" \
+        >/dev/null 2>&1 <<'APPLESCRIPT' &
+on run argv
+    delay 0.25
+    set targetTTY to item 1 of argv
+    tell application "Terminal"
+        repeat with terminalWindow in windows
+            repeat with terminalTab in tabs of terminalWindow
+                if tty of terminalTab is targetTTY then
+                    try
+                        close terminalTab
+                    on error
+                        close terminalWindow
+                    end try
+                    return
+                end if
+            end repeat
+        end repeat
+    end tell
+end run
+APPLESCRIPT
+}
+
+finish_gui() {
+    exit_code=$1
+    schedule_terminal_close
+    exit "$exit_code"
+}
+
 python_version_ready() {
     "$1" -c 'import sys; assert sys.version_info >= (3, 10)' >/dev/null 2>&1
 }
@@ -26,14 +61,15 @@ find_homebrew() {
     fi
 }
 
-SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
 if [ -z "$SCRIPT_DIR" ] || ! cd "$SCRIPT_DIR"; then
     echo "Unable to locate the Timelapse Manager directory."
     pause_and_fail
 fi
 
 if [ -x "./TimelapseManager" ]; then
-    exec "./TimelapseManager" gui
+    "./TimelapseManager" gui
+    finish_gui "$?"
 fi
 
 if [ ! -f "./timelapse.py" ]; then
@@ -155,4 +191,5 @@ if ! "$GUI_PYTHON" "$RUNTIME_CHECKER" runtime; then
     pause_and_fail
 fi
 
-exec "$GUI_PYTHON" "./timelapse.py" gui
+"$GUI_PYTHON" "./timelapse.py" gui
+finish_gui "$?"

@@ -123,11 +123,6 @@ goto finished
 
 :finished
 set "LAUNCH_EXIT_CODE=%ERRORLEVEL%"
-if not "%LAUNCH_EXIT_CODE%"=="0" (
-    echo.
-    echo Timelapse Manager exited with code %LAUNCH_EXIT_CODE%.
-    pause
-)
 popd >nul
 exit /b %LAUNCH_EXIT_CODE%
 

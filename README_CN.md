@@ -109,7 +109,7 @@ python timelapse.py config test
 
 “包管理”视图会检测 Camera Timelapse Controller、Bracketlapse、SunsetScore，以及每个外部或托管子依赖。支持的 Python 工具可以从 GUI 直接安装或更新到当前环境，支持的系统工具会调用当前平台的包管理器。安装 SunsetScore 后，还可以准备自动选定的 `llama.cpp` 运行时、Qwen 语言模型和视觉投影模型；该操作约下载 1.6 GB，使用 GPU 运行时时可能占用更多缓存空间。
 
-Windows 可以打开 `start_gui.bat`，macOS 可以打开 `start_gui.command`。源码启动器依次选择当前虚拟环境、`.venv` 和 `venv`，必要时自动创建 `.venv`。debug 包会直接启动捆绑的可执行文件。
+Windows 可以打开 `start_gui.bat`，macOS 可以打开 `start_gui.command`。源码启动器依次选择当前虚拟环境、`.venv` 和 `venv`，必要时自动创建 `.venv`。GUI 进程结束后，由启动器打开的命令行窗口会自动关闭；启动前的依赖检查失败仍会保留错误提示。debug 包会直接启动捆绑的可执行文件。
 
 Release 包使用无控制台的 PyInstaller GUI 入口。Windows 和 Linux 直接打开捆绑的 `TimelapseManager` 可执行文件，macOS 直接打开 `TimelapseManager.app`，都不会显示控制台窗口。macOS 请保持解压后的 `.app` 与同级 `config` 目录在一起，以保留便携配置。
 

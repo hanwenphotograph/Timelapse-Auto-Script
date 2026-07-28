@@ -13,6 +13,9 @@ from timelapse_manager.release_entry import release_arguments
 from timelapse_manager.ui.app import build_mode_label
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 class PackagingTests(unittest.TestCase):
     def test_debug_command_keeps_console_and_source_entrypoint(self) -> None:
         command = pyinstaller_command("debug", Path("/tmp/debug-build"))
@@ -65,6 +68,22 @@ class PackagingTests(unittest.TestCase):
             self.assertEqual(build_mode_label(), "Release")
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(build_mode_label(), "Debug")
+
+    def test_macos_launcher_closes_its_terminal_after_gui_exit(self) -> None:
+        launcher = (ROOT / "start_gui.command").read_text(encoding="utf-8")
+
+        self.assertIn("schedule_terminal_close", launcher)
+        self.assertIn("/usr/bin/nohup /usr/bin/osascript", launcher)
+        self.assertIn("close terminalTab", launcher)
+        self.assertNotIn('exec "./TimelapseManager" gui', launcher)
+        self.assertNotIn('exec "$GUI_PYTHON" "./timelapse.py" gui', launcher)
+
+    def test_windows_launcher_does_not_pause_after_gui_exit(self) -> None:
+        launcher = (ROOT / "start_gui.bat").read_text(encoding="utf-8")
+        finished = launcher.split(":finished", 1)[1].split(":failed", 1)[0]
+
+        self.assertNotIn("pause", finished.lower())
+        self.assertIn("exit /b %LAUNCH_EXIT_CODE%", finished)
 
 
 if __name__ == "__main__":
