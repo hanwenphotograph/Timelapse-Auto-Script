@@ -2,9 +2,19 @@
 
 [English](README.md) | [简体中文](README_CN.md)
 
+![Timelapse Manager runtime overview showing task and process status](docs/images/timelapse-manager-overview.png)
+
 Timelapse Manager is a cross-platform Python application for creating, running, and monitoring timelapse capture tasks. Its headless core owns capture, post-processing, persistent state, and process control; the CLI and GUI use the same management service.
 
 Tasks continue running after the GUI closes. Reopen the GUI or use the CLI from another terminal to inspect and control them on Windows, macOS, or Linux.
+
+## Interface
+
+The overview above and configuration screenshot below are captured directly from the macOS Debug application with an isolated demo workspace.
+
+### WeCom Webhook Configuration
+
+![Timelapse Manager WeCom webhook text and image configuration](docs/images/timelapse-manager-webhook.png)
 
 ## Features
 
@@ -269,3 +279,11 @@ python timelapse.py self-test
 ```
 
 The integration suite uses fake camera, Bracketlapse, and SunsetScore commands, including real detached workers, scoring failures, score-driven cleanup, successful and failed recurring handoffs, graceful controls, and eternal batch processing.
+
+## Application Icon
+
+The blue and white rounded `TL` mark is used by source windows, packaged executables, and the macOS Dock.
+
+<p align="center">
+  <img src="src/timelapse_manager/assets/timelapse-manager.png" alt="Timelapse Manager TL application icon" width="128" height="128">
+</p>

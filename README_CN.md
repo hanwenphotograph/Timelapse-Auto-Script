@@ -2,9 +2,19 @@
 
 [English](README.md) | [简体中文](README_CN.md)
 
+![Timelapse Manager 任务与进程状态运行总览](docs/images/timelapse-manager-overview.png)
+
 Timelapse Manager 是一个跨平台 Python 延时摄影任务管理器。无界面核心负责拍摄、后期处理、持久化状态和进程控制，CLI 与 GUI 共用同一套管理服务。
 
 关闭 GUI 后任务仍会继续运行。可以重新打开 GUI，或在另一个终端使用 CLI 查看和控制 Windows、macOS 与 Linux 上的任务。
+
+## 界面预览
+
+顶部运行总览与下方配置截图均直接取自使用独立演示工作区运行的 macOS Debug 程序。
+
+### 企业微信 Webhook 配置
+
+![Timelapse Manager 企业微信 Webhook 文本与图片配置](docs/images/timelapse-manager-webhook.png)
 
 ## 功能
 
@@ -269,3 +279,11 @@ python timelapse.py self-test
 ```
 
 集成测试使用模拟相机、Bracketlapse 和 SunsetScore，并实际启动后台 worker，覆盖评分失败、评分驱动清理、成功与失败接力、优雅控制和 eternal 分批处理。
+
+## 程序图标
+
+源码窗口、打包程序和 macOS 程序坞统一使用蓝底白字的圆角 `TL` 图标。
+
+<p align="center">
+  <img src="src/timelapse_manager/assets/timelapse-manager.png" alt="Timelapse Manager TL 应用图标" width="128" height="128">
+</p>
