@@ -111,7 +111,7 @@ python timelapse.py config test
 
 Windows 可以打开 `start_gui.bat`，macOS 可以打开 `start_gui.command`。源码启动器依次选择当前虚拟环境、`.venv` 和 `venv`，必要时自动创建 `.venv`。GUI 进程结束后，由启动器打开的命令行窗口会自动关闭；启动前的依赖检查失败仍会保留错误提示。debug 包会直接启动捆绑的可执行文件。
 
-Release 包使用无控制台的 PyInstaller GUI 入口。Windows 和 Linux 直接打开捆绑的 `TimelapseManager` 可执行文件，macOS 直接打开 `TimelapseManager.app`，都不会显示控制台窗口。macOS 请保持解压后的 `.app` 与同级 `config` 目录在一起，以保留便携配置。
+Release 包使用无控制台的 PyInstaller GUI 入口。Windows 和 Linux 直接打开捆绑的 `TimelapseManager` 可执行文件，macOS 直接打开 `TimelapseManager.app`，都不会显示控制台窗口。源码窗口、打包程序和 macOS 程序坞统一使用主界面的蓝底白色 `TL` 图标。macOS 请保持解压后的 `.app` 与同级 `config` 目录在一起，以保留便携配置。
 
 ## CLI
 
@@ -230,6 +230,12 @@ Eternal 任务把暂存数据和跨平台 YAML 队列放在 `<auto_root>/.eterna
 ## 打包
 
 PyInstaller 不支持交叉编译，因此需要在每个目标系统上分别构建：
+
+图标资源由同一脚本生成；调整品牌视觉后可统一重建 PNG、ICO 和 ICNS：
+
+```bash
+python scripts/generate_icons.py
+```
 
 ```bash
 python -m pip install -r requirements-dev.txt

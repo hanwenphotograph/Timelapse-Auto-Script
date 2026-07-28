@@ -111,7 +111,7 @@ The **Package Management** view detects Camera Timelapse Controller, Bracketlaps
 
 Windows users can open `start_gui.bat`; macOS users can open `start_gui.command`. Source launchers prefer an active virtual environment, then `.venv`, then `venv`, and create `.venv` when necessary. Command windows opened by the launcher close automatically after the GUI process exits; pre-launch dependency failures remain visible. Debug packages launch the bundled executable directly.
 
-Release packages are built with a windowed PyInstaller entry point. On Windows and Linux, launch the bundled `TimelapseManager` executable directly; on macOS, open `TimelapseManager.app`. Neither Release entry point opens a console window. Keep the extracted macOS `.app` beside its bundled `config` directory so portable configuration remains available.
+Release packages are built with a windowed PyInstaller entry point. On Windows and Linux, launch the bundled `TimelapseManager` executable directly; on macOS, open `TimelapseManager.app`. Neither Release entry point opens a console window. Source windows, packaged applications, and the macOS Dock use the blue and white `TL` icon from the main interface. Keep the extracted macOS `.app` beside its bundled `config` directory so portable configuration remains available.
 
 ## CLI
 
@@ -230,6 +230,12 @@ Eternal tasks store staging data and portable YAML queues under `<auto_root>/.et
 ## Packaging
 
 Build on each target operating system because PyInstaller does not cross-compile:
+
+All icon formats come from one generator. Rebuild the PNG, ICO, and ICNS assets after changing the brand artwork:
+
+```bash
+python scripts/generate_icons.py
+```
 
 ```bash
 python -m pip install -r requirements-dev.txt

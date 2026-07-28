@@ -33,6 +33,20 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(platform_name("Darwin"), "mac")
         self.assertEqual(platform_name("Windows"), "win")
 
+    def test_build_commands_use_platform_native_icons(self) -> None:
+        suffixes = {"Windows": ".ico", "Darwin": ".icns", "Linux": ".png"}
+        for system, suffix in suffixes.items():
+            command = pyinstaller_command(
+                "release",
+                Path("/tmp/icon-build"),
+                system=system,
+            )
+            icon = Path(command[command.index("--icon") + 1])
+            bundled = command[command.index("--add-data") + 1]
+            self.assertEqual(icon.suffix, suffix)
+            self.assertTrue(icon.is_file())
+            self.assertIn("timelapse-manager.png", bundled)
+
     def test_release_entry_defaults_to_gui_but_preserves_worker_arguments(self) -> None:
         self.assertEqual(release_arguments([]), ["gui"])
         self.assertEqual(release_arguments(["_worker", "--task", "task-id"]), [

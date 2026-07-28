@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 import subprocess
@@ -14,6 +15,8 @@ from typing import Literal
 BuildMode = Literal["debug", "release"]
 ROOT = Path(__file__).resolve().parents[1]
 APPLICATION_NAME = "TimelapseManager"
+ICON_DIR = ROOT / "src" / "timelapse_manager" / "assets"
+ICON_PNG = ICON_DIR / "timelapse-manager.png"
 
 
 def platform_name(system: str | None = None) -> str:
@@ -28,7 +31,11 @@ def platform_name(system: str | None = None) -> str:
 
 
 def pyinstaller_command(
-    mode: BuildMode, build_root: Path, *, python: str | None = None
+    mode: BuildMode,
+    build_root: Path,
+    *,
+    python: str | None = None,
+    system: str | None = None,
 ) -> list[str]:
     if mode not in {"debug", "release"}:
         raise ValueError(f"未知构建模式: {mode}")
@@ -37,6 +44,9 @@ def pyinstaller_command(
         if mode == "debug"
         else ROOT / "src" / "timelapse_manager" / "release_entry.py"
     )
+    tag = platform_name(system)
+    icon_suffix = {"win": ".ico", "mac": ".icns"}.get(tag, ".png")
+    icon_path = ICON_DIR / f"timelapse-manager{icon_suffix}"
     return [
         python or sys.executable,
         "-m",
@@ -47,6 +57,10 @@ def pyinstaller_command(
         "--console" if mode == "debug" else "--windowed",
         "--name",
         APPLICATION_NAME,
+        "--icon",
+        str(icon_path),
+        "--add-data",
+        f"{ICON_PNG}{os.pathsep}timelapse_manager/assets",
         "--collect-all",
         "customtkinter",
         "--paths",
