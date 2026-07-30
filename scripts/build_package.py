@@ -75,9 +75,7 @@ def pyinstaller_command(
     ]
 
 
-def _generated_application(
-    dist_root: Path, mode: BuildMode, tag: str
-) -> Path:
+def _generated_application(dist_root: Path, mode: BuildMode, tag: str) -> Path:
     candidates = [dist_root / APPLICATION_NAME]
     if mode == "release" and tag == "mac":
         candidates.insert(0, dist_root / f"{APPLICATION_NAME}.app")
@@ -104,9 +102,9 @@ def _stage_application(
         shutil.rmtree(package_dir.parent)
     package_dir.mkdir(parents=True)
     if source.suffix == ".app":
-        shutil.copytree(source, package_dir / source.name)
+        shutil.copytree(source, package_dir / source.name, symlinks=True)
     else:
-        shutil.copytree(source, package_dir, dirs_exist_ok=True)
+        shutil.copytree(source, package_dir, dirs_exist_ok=True, symlinks=True)
     _copy_payload(package_dir)
     if mode != "debug":
         return
@@ -117,6 +115,33 @@ def _stage_application(
     shutil.copy2(ROOT / launcher_name, launcher)
     if tag == "mac":
         launcher.chmod(launcher.stat().st_mode | 0o111)
+
+
+def _archive_package(package_dir: Path, archive_base: Path, tag: str) -> Path:
+    if tag == "mac":
+        archive = archive_base.with_suffix(".zip")
+        archive.unlink(missing_ok=True)
+        subprocess.run(
+            [
+                "/usr/bin/zip",
+                "-q",
+                "-r",
+                "-y",
+                str(archive),
+                package_dir.name,
+            ],
+            cwd=package_dir.parent,
+            check=True,
+        )
+        return archive
+    return Path(
+        shutil.make_archive(
+            str(archive_base),
+            "zip",
+            root_dir=package_dir.parent,
+            base_dir=package_dir.name,
+        )
+    )
 
 
 def build(mode: BuildMode) -> Path:
@@ -139,11 +164,4 @@ def build(mode: BuildMode) -> Path:
     archive_base = archive_dir / (
         f"{APPLICATION_NAME}-{tag}-{mode}-portable-{timestamp}"
     )
-    return Path(
-        shutil.make_archive(
-            str(archive_base),
-            "zip",
-            root_dir=package_parent,
-            base_dir=APPLICATION_NAME,
-        )
-    )
+    return _archive_package(package_dir, archive_base, tag)

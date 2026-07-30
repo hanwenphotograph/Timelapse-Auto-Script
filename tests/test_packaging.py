@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import os
+import stat
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from zipfile import ZipFile
 
-from scripts.build_package import pyinstaller_command, platform_name
+from scripts.build_package import (
+    _archive_package,
+    _stage_application,
+    platform_name,
+    pyinstaller_command,
+)
 from timelapse_manager.paths import application_root
 from timelapse_manager import release_entry
 from timelapse_manager.release_entry import release_arguments
@@ -47,13 +55,50 @@ class PackagingTests(unittest.TestCase):
             self.assertTrue(icon.is_file())
             self.assertIn("timelapse-manager.png", bundled)
 
+    @unittest.skipUnless(sys.platform == "darwin", "macOS archive behavior")
+    def test_macos_portable_archive_preserves_framework_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "dist" / "TimelapseManager.app"
+            versions = (
+                source / "Contents" / "Frameworks" / "Python.framework" / "Versions"
+            )
+            current = versions / "Current"
+            (versions / "3.10").mkdir(parents=True)
+            current.symlink_to("3.10", target_is_directory=True)
+            package_dir = root / "package" / "TimelapseManager"
+
+            _stage_application(source, package_dir, "release", "mac")
+            staged = (
+                package_dir
+                / "TimelapseManager.app"
+                / "Contents"
+                / "Frameworks"
+                / "Python.framework"
+                / "Versions"
+                / "Current"
+            )
+            self.assertTrue(staged.is_symlink())
+
+            archive = _archive_package(package_dir, root / "release", "mac")
+            with ZipFile(archive) as zipped:
+                member = zipped.getinfo(
+                    "TimelapseManager/TimelapseManager.app/Contents/Frameworks/"
+                    "Python.framework/Versions/Current"
+                )
+                self.assertTrue(stat.S_ISLNK(member.external_attr >> 16))
+                self.assertEqual(zipped.read(member), b"3.10")
+
     def test_release_entry_defaults_to_gui_but_preserves_worker_arguments(self) -> None:
         self.assertEqual(release_arguments([]), ["gui"])
-        self.assertEqual(release_arguments(["_worker", "--task", "task-id"]), [
-            "_worker",
-            "--task",
-            "task-id",
-        ])
+        self.assertEqual(
+            release_arguments(["_worker", "--task", "task-id"]),
+            [
+                "_worker",
+                "--task",
+                "task-id",
+            ],
+        )
 
     def test_release_entry_invokes_cli_with_effective_arguments(self) -> None:
         with (
