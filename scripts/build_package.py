@@ -11,6 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+from scripts.macos_package import (
+    BUNDLE_IDENTIFIER,
+    create_archive as create_macos_archive,
+    finalize_application as finalize_macos_application,
+)
+
 
 BuildMode = Literal["debug", "release"]
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +53,7 @@ def pyinstaller_command(
     tag = platform_name(system)
     icon_suffix = {"win": ".ico", "mac": ".icns"}.get(tag, ".png")
     icon_path = ICON_DIR / f"timelapse-manager{icon_suffix}"
-    return [
+    command = [
         python or sys.executable,
         "-m",
         "PyInstaller",
@@ -65,14 +71,21 @@ def pyinstaller_command(
         "customtkinter",
         "--paths",
         str(ROOT / "src"),
-        "--distpath",
-        str(build_root / "dist"),
-        "--workpath",
-        str(build_root / "work"),
-        "--specpath",
-        str(build_root / "spec"),
-        str(entrypoint),
     ]
+    if tag == "mac":
+        command.extend(["--osx-bundle-identifier", BUNDLE_IDENTIFIER])
+    command.extend(
+        [
+            "--distpath",
+            str(build_root / "dist"),
+            "--workpath",
+            str(build_root / "work"),
+            "--specpath",
+            str(build_root / "spec"),
+            str(entrypoint),
+        ]
+    )
+    return command
 
 
 def _generated_application(dist_root: Path, mode: BuildMode, tag: str) -> Path:
@@ -119,21 +132,7 @@ def _stage_application(
 
 def _archive_package(package_dir: Path, archive_base: Path, tag: str) -> Path:
     if tag == "mac":
-        archive = archive_base.with_suffix(".zip")
-        archive.unlink(missing_ok=True)
-        subprocess.run(
-            [
-                "/usr/bin/zip",
-                "-q",
-                "-r",
-                "-y",
-                str(archive),
-                package_dir.name,
-            ],
-            cwd=package_dir.parent,
-            check=True,
-        )
-        return archive
+        return create_macos_archive(package_dir, archive_base)
     return Path(
         shutil.make_archive(
             str(archive_base),
@@ -153,6 +152,8 @@ def build(mode: BuildMode) -> Path:
         check=True,
     )
     source = _generated_application(build_root / "dist", mode, tag)
+    if source.suffix == ".app":
+        finalize_macos_application(source)
     package_parent = build_root / "package"
     package_dir = package_parent / APPLICATION_NAME
     _stage_application(source, package_dir, mode, tag)

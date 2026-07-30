@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import plistlib
 import stat
 import sys
 import tempfile
@@ -14,6 +15,11 @@ from scripts.build_package import (
     _stage_application,
     platform_name,
     pyinstaller_command,
+)
+from scripts.macos_package import (
+    APPLICATION_VERSION,
+    BUNDLE_IDENTIFIER,
+    finalize_application,
 )
 from timelapse_manager.paths import application_root
 from timelapse_manager import release_entry
@@ -54,6 +60,31 @@ class PackagingTests(unittest.TestCase):
             self.assertEqual(icon.suffix, suffix)
             self.assertTrue(icon.is_file())
             self.assertIn("timelapse-manager.png", bundled)
+
+    def test_macos_release_uses_stable_bundle_metadata(self) -> None:
+        command = pyinstaller_command(
+            "release", Path("/tmp/release-build"), system="Darwin"
+        )
+        self.assertEqual(
+            command[command.index("--osx-bundle-identifier") + 1],
+            BUNDLE_IDENTIFIER,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            application = Path(temporary) / "TimelapseManager.app"
+            plist_path = application / "Contents" / "Info.plist"
+            plist_path.parent.mkdir(parents=True)
+            with plist_path.open("wb") as stream:
+                plistlib.dump({"CFBundleShortVersionString": "0.0.0"}, stream)
+
+            with patch("scripts.macos_package.subprocess.run") as run:
+                finalize_application(application)
+
+            with plist_path.open("rb") as stream:
+                info = plistlib.load(stream)
+            self.assertEqual(info["CFBundleIdentifier"], BUNDLE_IDENTIFIER)
+            self.assertEqual(info["CFBundleShortVersionString"], APPLICATION_VERSION)
+            self.assertEqual(info["CFBundleVersion"], APPLICATION_VERSION)
+            self.assertEqual(run.call_count, 2)
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS archive behavior")
     def test_macos_portable_archive_preserves_framework_symlinks(self) -> None:
