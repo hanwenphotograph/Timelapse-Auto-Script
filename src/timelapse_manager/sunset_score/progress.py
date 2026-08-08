@@ -58,6 +58,7 @@ class SunsetProgressTracker:
             "sunsetscore-resident",
             completed=aggregate_completed,
             total=aggregate_total,
+            stage="sunset",
             phase="晚霞评分",
         )
 

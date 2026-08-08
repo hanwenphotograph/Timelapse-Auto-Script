@@ -24,11 +24,11 @@ class SunsetScoreIntegrationTests(SunsetScoreIntegrationTestCase):
         }
         self.assertEqual(
             child_progress["bracketlapse-standby"],
-            {"completed": 2, "total": 2},
+            {"stage": "video", "completed": 2, "total": 2},
         )
         self.assertEqual(
             child_progress["sunsetscore-resident"],
-            {"completed": 2, "total": 2},
+            {"stage": "sunset", "completed": 2, "total": 2},
         )
 
     def test_positive_score_overrides_cleanup_keep_list(self) -> None:

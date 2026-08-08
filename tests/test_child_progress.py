@@ -58,6 +58,40 @@ class ChildProgressTests(unittest.TestCase):
 
         self.assertEqual(records[1]["progress"], {"completed": 3, "total": 3})
 
+    def test_stage_switch_resets_counts_then_new_stage_is_monotonic(self) -> None:
+        records, _changed = update_child_progress(
+            self.records,
+            "bracketlapse-standby",
+            completed=0,
+            total=10,
+            stage="video",
+        )
+
+        self.assertEqual(
+            records[1]["progress"],
+            {"stage": "video", "completed": 0, "total": 10},
+        )
+        records, changed = update_child_progress(
+            records,
+            "bracketlapse-standby",
+            completed=4,
+            total=8,
+            stage="video",
+        )
+        self.assertTrue(changed)
+        self.assertEqual(
+            records[1]["progress"],
+            {"stage": "video", "completed": 4, "total": 10},
+        )
+
+    def test_invalid_stage_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "无效的子进度阶段"):
+            update_child_progress(
+                self.records,
+                "bracketlapse-standby",
+                stage="encoding",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

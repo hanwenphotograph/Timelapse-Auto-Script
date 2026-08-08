@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from timelapse_manager.ui.progress_model import ProgressItem, task_progress_items
-from timelapse_manager.ui.progress_values import (
-    capture_bounds,
-    local_naive,
-    schedule_ratio,
-)
+from timelapse_manager.ui.progress_stage import resolve_main_progress
+from timelapse_manager.ui.progress_values import local_naive
 
 
-_ACTIVE_STATUSES = {"running", "finishing", "stopping"}
 _TERMINAL_LABELS = {
     "completed": "已完成",
     "failed": "失败",
@@ -52,16 +48,13 @@ def task_progress_label(
         return "正在启动"
     if task.get("preset") == "eternal":
         return _eternal_progress_label(state)
-    bounds = capture_bounds(task)
-    if status not in _ACTIVE_STATUSES or bounds is None:
+    if status not in {"running", "finishing", "stopping"}:
         return str(state.get("phase") or "等待中")
-    start, end = bounds
     moment = local_naive(now or datetime.now())
-    if moment < start:
-        return f"距开始 {_duration_label(start - moment)}"
-    if moment >= end or status in {"finishing", "stopping"}:
-        return str(state.get("phase") or _status_label(status))
-    return f"{round(schedule_ratio(start, end, moment) * 100)}%"
+    main = resolve_main_progress(task, state, moment)
+    if main.stage == "waiting_capture" or main.value is None:
+        return main.label
+    return f"{main.label} {round(main.value * 100)}%"
 
 
 def _eternal_progress_label(state: Mapping[str, Any]) -> str:
@@ -78,19 +71,6 @@ def _eternal_progress_label(state: Mapping[str, Any]) -> str:
         if isinstance(count, int) and not isinstance(count, bool) and count > 0:
             parts.append(f"{label} {count} {suffix}")
     return " · ".join(parts)
-
-
-def _status_label(status: str) -> str:
-    return {"finishing": "正在收尾", "stopping": "正在停止"}.get(
-        status,
-        "运行中",
-    )
-
-
-def _duration_label(value: timedelta) -> str:
-    minutes = max(0, int(value.total_seconds() // 60))
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}小时{minutes:02d}分" if hours else f"{minutes}分"
 
 
 __all__ = [

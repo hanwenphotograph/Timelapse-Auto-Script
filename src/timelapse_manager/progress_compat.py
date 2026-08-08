@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import re
@@ -11,6 +10,11 @@ import threading
 from typing import Any
 
 from timelapse_manager.child_progress import update_child_progress
+from timelapse_manager.progress_log_state import LogProgressEntry, RecoveredProgress
+from timelapse_manager.progress_video_compat import (
+    enrich_video_state,
+    is_bracket_role,
+)
 from timelapse_manager.sunset_score.jsonl_protocol import scan_progress
 
 
@@ -23,49 +27,11 @@ _RUN_STARTED = "任务工作进程启动，模式="
 _SUNSET_MARKER = "[sunsetscore-resident] "
 
 
-@dataclass(frozen=True, slots=True)
-class RecoveredProgress:
-    hdr_completed: int = 0
-    hdr_total: int = 0
-    sunset_completed: int = 0
-    sunset_total: int = 0
-
-
-@dataclass(slots=True)
-class _LogEntry:
-    session_key: str
-    file_identity: tuple[int, int] | None = None
-    offset: int = 0
-    pending: bytes = b""
-    hdr_completed: int = 0
-    hdr_total: int = 0
-    sunset_sessions: dict[str, tuple[int, int]] = field(default_factory=dict)
-
-    def clear_file(self) -> None:
-        self.file_identity = None
-        self.offset = 0
-        self.pending = b""
-        self.clear_counts()
-
-    def clear_counts(self) -> None:
-        self.hdr_completed = 0
-        self.hdr_total = 0
-        self.sunset_sessions.clear()
-
-    def snapshot(self) -> RecoveredProgress:
-        return RecoveredProgress(
-            self.hdr_completed,
-            self.hdr_total,
-            sum(value[0] for value in self.sunset_sessions.values()),
-            sum(value[1] for value in self.sunset_sessions.values()),
-        )
-
-
 class TaskLogProgressReader:
     """Incrementally parse task logs and enrich an in-memory state copy."""
 
     def __init__(self) -> None:
-        self._entries: dict[Path, _LogEntry] = {}
+        self._entries: dict[Path, LogProgressEntry] = {}
         self._lock = threading.Lock()
 
     def enrich_state(
@@ -82,17 +48,18 @@ class TaskLogProgressReader:
         ):
             return result
         children = [dict(item) for item in children_value if isinstance(item, Mapping)]
-        roles = {
+        running_roles = {
             str(item.get("role"))
             for item in children
             if item.get("status") == "running"
         }
-        supported = roles & {
+        supported = running_roles & {
             "bracketlapse-standby",
             "bracketlapse-process",
             "sunsetscore-resident",
         }
-        if not supported:
+        has_bracket = any(is_bracket_role(str(item.get("role"))) for item in children)
+        if not supported and not has_bracket:
             result["children"] = children
             return result
 
@@ -105,6 +72,7 @@ class TaskLogProgressReader:
                     role,
                     completed=recovered.hdr_completed,
                     total=recovered.hdr_total,
+                    stage="hdr",
                     phase="HDR处理",
                 )
         if "sunsetscore-resident" in supported and recovered.sunset_total > 0:
@@ -113,8 +81,10 @@ class TaskLogProgressReader:
                 "sunsetscore-resident",
                 completed=recovered.sunset_completed,
                 total=recovered.sunset_total,
+                stage="sunset",
                 phase="晚霞评分",
             )
+        result, children = enrich_video_state(result, children, recovered.video)
         result["children"] = children
         return result
 
@@ -123,7 +93,7 @@ class TaskLogProgressReader:
         with self._lock:
             entry = self._entries.get(resolved)
             if entry is None or entry.session_key != session_key:
-                entry = _LogEntry(session_key)
+                entry = LogProgressEntry(session_key)
                 self._entries[resolved] = entry
             try:
                 stat = resolved.stat()
@@ -150,7 +120,7 @@ class TaskLogProgressReader:
             return entry.snapshot()
 
     @staticmethod
-    def _parse_line(entry: _LogEntry, line: str) -> None:
+    def _parse_line(entry: LogProgressEntry, line: str) -> None:
         if _RUN_STARTED in line:
             entry.clear_counts()
         match = _CAPTURE_ROUND.search(line)
@@ -158,11 +128,13 @@ class TaskLogProgressReader:
             entry.hdr_total = max(entry.hdr_total, int(match.group(1)))
 
         document = _document_after(line, _HDR_EVENT_PREFIX)
-        if document is not None and document.get("event") == "hdr_ready":
-            frame = document.get("frame_number")
-            if type(frame) is int and frame > 0:
-                entry.hdr_completed = max(entry.hdr_completed, frame)
-                entry.hdr_total = max(entry.hdr_total, entry.hdr_completed)
+        if document is not None:
+            if document.get("event") == "hdr_ready":
+                frame = document.get("frame_number")
+                if type(frame) is int and frame > 0:
+                    entry.hdr_completed = max(entry.hdr_completed, frame)
+                    entry.hdr_total = max(entry.hdr_total, entry.hdr_completed)
+        entry.video.consume(line, document)
 
         document = _document_after(line, _SUNSET_MARKER)
         if document is None:

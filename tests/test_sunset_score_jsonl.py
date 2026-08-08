@@ -106,7 +106,12 @@ class SunsetScoreJsonlTests(unittest.TestCase):
         self.assertEqual(runtime.set_child_progress.call_count, 3)
         self.assertEqual(
             runtime.set_child_progress.call_args.kwargs,
-            {"completed": 1, "total": 2, "phase": "晚霞评分"},
+            {
+                "completed": 1,
+                "total": 2,
+                "stage": "sunset",
+                "phase": "晚霞评分",
+            },
         )
 
 

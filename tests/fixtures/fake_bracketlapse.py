@@ -33,7 +33,7 @@ JPEG_BYTES = base64.b64decode(
 def main() -> int:
     args = sys.argv[1:]
     if "--version" in args:
-        print("bracketlapse 0.2.0")
+        print("bracketlapse 0.4.0")
         return 0
     if args and args[0] == "--standby":
         work_dir = Path(args[1])
@@ -42,9 +42,7 @@ def main() -> int:
     work_dir = Path(args[0])
     work_dir.mkdir(parents=True, exist_ok=True)
     groups = _complete_groups(work_dir)
-    frame_count = int(
-        os.environ.get("FAKE_BRACKET_FRAMES", str(len(groups) or 1))
-    )
+    frame_count = int(os.environ.get("FAKE_BRACKET_FRAMES", str(len(groups) or 1)))
     _fuse_missing(work_dir, frame_count)
     _finalize(work_dir, args)
     return 0
@@ -65,9 +63,7 @@ def _run_standby(work_dir: Path, quiet_seconds: float) -> int:
         if armed and time.monotonic() - last_change >= quiet_seconds:
             break
         time.sleep(0.01)
-    frame_count = int(
-        os.environ.get("FAKE_BRACKET_FRAMES", str(observed_groups or 1))
-    )
+    frame_count = int(os.environ.get("FAKE_BRACKET_FRAMES", str(observed_groups or 1)))
     _fuse_missing(work_dir, frame_count)
     _finalize(work_dir, [])
     return 0
@@ -115,9 +111,37 @@ def _finalize(work_dir: Path, args: list[str]) -> None:
     if "--no-video" not in args:
         video = work_dir / "hdr_video"
         video.mkdir(exist_ok=True)
-        (video / "timelapse.mp4").write_bytes(b"fake-video")
+        output = video / "timelapse.mp4"
+        total = len(list((work_dir / "hdr_enfuse").glob("*.jpg")))
         print("Creating video from fake frames", flush=True)
+        _video_event("video_started", output, 0, total)
+        for completed in range(1, total + 1):
+            time.sleep(float(os.environ.get("FAKE_BRACKET_VIDEO_DELAY", "0")))
+            _video_event("video_progress", output, completed, total)
+        output.write_bytes(b"fake-video")
+        _video_event("video_completed", output, total, total)
     print("Done.", flush=True)
+
+
+def _video_event(
+    event: str,
+    output: Path,
+    completed: int,
+    total: int,
+) -> None:
+    print(
+        "BRACKETLAPSE_EVENT "
+        + json.dumps(
+            {
+                "event": event,
+                "path": str(output.resolve()),
+                "completed": completed,
+                "total": total,
+            },
+            separators=(",", ":"),
+        ),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

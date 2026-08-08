@@ -59,6 +59,7 @@ class ScheduledWorkflow:
         if interval is None:
             interval = self.project["capture_interval_seconds"]
         processing_enabled = bool(self.task["processing"].get("enabled", True))
+        self.runtime.set_main_stage("waiting_capture")
         self.runtime.set_phase(
             "守护拍摄计划",
             f"{spec.label} {spec.start_date} {spec.start_at}-{spec.end_date} {spec.end_at}",
@@ -192,10 +193,12 @@ class ScheduledWorkflow:
                 standby_role,
                 completed=capture_progress.hdr_completed,
                 total=capture_progress.rounds,
+                stage="hdr",
                 phase="HDR处理",
             )
         if processing_enabled and success:
             assert standby is not None
+            self.runtime.set_main_stage("waiting_processing")
             self.runtime.set_phase("等待 HDR 处理", str(spec.work_dir))
             code = self.runtime.wait_child(standby)
             success = code == 0

@@ -1,43 +1,34 @@
-"""Structured overall and subtask progress rows."""
+"""Structured main-stage and feature progress rows."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
+from timelapse_manager.ui.progress_stage import (
+    MainProgress,
+    is_bracket_role,
+    progress_records,
+    record_stage,
+    resolve_main_progress,
+)
 from timelapse_manager.ui.progress_values import (
-    active_schedule_value,
-    capture_bounds,
     local_naive,
-    overall_value,
     progress_counts,
     progress_value,
 )
 
 
-_STATUS_LABELS = {
+_TERMINAL_DETAILS = {
     "idle": "未启动",
-    "starting": "正在启动",
-    "running": "运行中",
-    "finishing": "收尾中",
-    "stopping": "停止中",
     "completed": "已完成",
     "failed": "失败",
     "stopped": "已停止",
     "exited": "已退出",
 }
-_ROLE_LABELS = {
-    "runner": "任务工作进程",
-    "camera-timelapse": "相机拍摄",
-    "camera-timelapse-eternal": "相机拍摄",
-    "bracketlapse-standby": "HDR处理",
-    "bracketlapse-process": "HDR处理",
-    "sunsetscore": "晚霞评分",
-    "sunsetscore-resident": "晚霞评分",
-    "archive": "归档",
-}
+_HIDDEN_TERMINAL_STATUSES = {"idle", "completed", "stopped", "exited"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,124 +49,141 @@ def task_progress_items(
     *,
     now: datetime | None = None,
 ) -> tuple[ProgressItem, ...]:
-    """Build an overall row followed by independently tracked subtask rows."""
+    """Build a main row followed only by currently relevant feature rows."""
     moment = local_naive(now or datetime.now())
-    items = [_overall_item(task, state, moment)]
-    progress = state.get("progress")
-    nested = progress if isinstance(progress, Mapping) else {}
-    index = 0
-    for source in ("children", "threads", "subtasks"):
-        records = state.get(source) or nested.get(source)
-        for record in _records(records):
-            items.append(_subtask_item(task, state, record, source, index, moment))
-            index += 1
+    main = resolve_main_progress(task, state, moment)
+    items = [_overall_item(task, state, main)]
+    status = str(state.get("status", "idle"))
+    if status in _HIDDEN_TERMINAL_STATUSES:
+        return tuple(items)
+    records = progress_records(state)
+    if status == "failed":
+        selected = _failed_records(task, records)
+    elif task.get("preset") == "eternal":
+        selected = _eternal_records(records)
+    elif main.stage == "waiting_capture":
+        selected = ()
+    elif main.stage in {"capture", "waiting_processing"}:
+        selected = _finite_processing_records(records)
+    else:
+        selected = _unfinished_sunset_records(records)
+    items.extend(_subtask_item(record) for record in selected)
     return tuple(items)
 
 
 def _overall_item(
     task: Mapping[str, Any],
     state: Mapping[str, Any],
-    now: datetime,
+    main: MainProgress,
 ) -> ProgressItem:
     status = str(state.get("status", "idle"))
-    phase = str(state.get("phase") or _STATUS_LABELS.get(status, "等待中"))
-    explicit = overall_value(state)
+    label = "持续拍摄" if task.get("preset") == "eternal" else "总体进度"
     if status == "completed":
-        value = 1.0
-    elif status in {"idle", "failed", "stopped", "exited"}:
-        value = explicit if explicit is not None else 0.0
-    elif explicit is not None:
-        value = explicit
-    elif task.get("preset") == "eternal" or status in {
-        "starting",
-        "finishing",
-        "stopping",
-    }:
-        value = None
+        value, detail, value_text = 1.0, "已完成", None
+    elif status in _TERMINAL_DETAILS:
+        value, detail, value_text = 0.0, _TERMINAL_DETAILS[status], None
     else:
-        bounds = capture_bounds(task)
-        value = active_schedule_value(bounds, now)
-        if bounds is not None and now < bounds[0]:
-            phase = f"距开始 {_duration_label(bounds[0] - now)}"
-    return ProgressItem("overall", "总体进度", status, phase, value)
+        value, detail, value_text = main.value, main.label, main.value_text
+    return ProgressItem("overall", label, status, detail, value, value_text)
 
 
-def _subtask_item(
-    task: Mapping[str, Any],
-    state: Mapping[str, Any],
-    record: Mapping[str, Any],
-    source: str,
-    index: int,
-    now: datetime,
-) -> ProgressItem:
-    role = str(record.get("role") or record.get("name") or record.get("id") or "子任务")
+def _subtask_item(record: Mapping[str, Any]) -> ProgressItem:
+    role = str(record.get("role") or record.get("name") or "")
+    stage = record_stage(record)
     status = str(record.get("status") or "running")
-    pid = record.get("pid")
-    label = _role_label(role)
-    if pid:
-        label = f"{label} · PID {pid}"
-    detail = str(record.get("phase") or record.get("message") or "")
-    state_phase = str(state.get("phase") or "")
-    if not detail and _phase_matches(role, state_phase):
-        detail = state_phase
-    if not detail:
-        detail = _STATUS_LABELS.get(status, status)
-    value = progress_value(record)
     counts = progress_counts(record)
+    value = progress_value(record)
     if status == "completed":
-        value = 1.0
-    elif value is None and status in {
-        "idle",
-        "waiting",
-        "queued",
-        "failed",
-        "stopped",
-        "exited",
-    }:
-        value = 0.0
-    elif value is None and role.startswith("camera-timelapse"):
-        value = active_schedule_value(capture_bounds(task), now)
-    identity = record.get("id") or pid or f"{role}-{index}"
-    value_text = f"{counts[0]}/{counts[1]}" if counts is not None else None
-    return ProgressItem(
-        f"{source}-{identity}",
-        label,
-        status,
-        detail,
-        value,
-        value_text,
+        value, detail = 1.0, "已完成"
+    elif status == "failed":
+        value, detail = value if value is not None else 0.0, "失败"
+    elif status in {"stopped", "exited"}:
+        value, detail = value if value is not None else 0.0, "已停止"
+    elif value is not None and value >= 1:
+        detail = "已追平"
+    else:
+        detail = "处理中"
+    if role.startswith("bracketlapse-batch-"):
+        sequence = role.rsplit("-", 1)[-1]
+        key, label = f"subtask-batch-{sequence}", f"批次 {sequence}"
+    elif role.startswith("sunsetscore"):
+        key, label = "subtask-sunset", "晚霞评分"
+    else:
+        key, label = "subtask-hdr", "HDR处理"
+    value_text = None
+    if stage != "video" and counts is not None and counts[1] > 0:
+        value_text = f"{counts[0]}/{counts[1]}"
+    return ProgressItem(key, label, status, detail, value, value_text)
+
+
+def _finite_processing_records(
+    records: tuple[Mapping[str, Any], ...],
+) -> tuple[Mapping[str, Any], ...]:
+    selected = []
+    bracket = _latest(records, lambda record: _finite_bracket(record))
+    sunset = _latest(records, _sunset)
+    if bracket is not None and record_stage(bracket) == "hdr":
+        selected.append(bracket)
+    if sunset is not None:
+        selected.append(sunset)
+    return tuple(selected)
+
+
+def _unfinished_sunset_records(
+    records: tuple[Mapping[str, Any], ...],
+) -> tuple[Mapping[str, Any], ...]:
+    sunset = _latest(records, _sunset)
+    return (
+        (sunset,) if sunset is not None and sunset.get("status") != "completed" else ()
     )
 
 
-def _records(value: object) -> tuple[Mapping[str, Any], ...]:
-    if isinstance(value, Mapping):
-        return tuple(
-            {**record, "name": record.get("name") or str(name)}
-            for name, record in value.items()
-            if isinstance(record, Mapping)
-        )
-    if isinstance(value, (list, tuple)):
-        return tuple(record for record in value if isinstance(record, Mapping))
-    return ()
+def _eternal_records(
+    records: tuple[Mapping[str, Any], ...],
+) -> tuple[Mapping[str, Any], ...]:
+    batch = _latest(
+        records,
+        lambda record: (
+            str(record.get("role", "")).startswith("bracketlapse-batch-")
+            and record.get("status") == "running"
+        ),
+    )
+    sunset = _latest(
+        records, lambda record: _sunset(record) and record.get("status") != "completed"
+    )
+    return tuple(record for record in (batch, sunset) if record is not None)
 
 
-def _role_label(role: str) -> str:
-    if role.startswith("bracketlapse-batch-"):
-        return f"HDR处理 · 批次 {role.rsplit('-', 1)[-1]}"
-    return _ROLE_LABELS.get(role, role)
+def _failed_records(
+    task: Mapping[str, Any],
+    records: tuple[Mapping[str, Any], ...],
+) -> tuple[Mapping[str, Any], ...]:
+    bracket_test = (
+        _eternal_batch if task.get("preset") == "eternal" else _finite_bracket
+    )
+    latest = (_latest(records, bracket_test), _latest(records, _sunset))
+    return tuple(
+        record
+        for record in latest
+        if record is not None and record.get("status") == "failed"
+    )
 
 
-def _phase_matches(role: str, phase: str) -> bool:
-    if role.startswith("camera-timelapse"):
-        return "拍摄" in phase
-    if role.startswith("bracketlapse"):
-        return any(word in phase for word in ("后期", "HDR", "去闪", "视频"))
-    if role.startswith("sunsetscore"):
-        return "晚霞" in phase
-    return False
+def _latest(
+    records: tuple[Mapping[str, Any], ...],
+    predicate: Callable[[Mapping[str, Any]], bool],
+) -> Mapping[str, Any] | None:
+    return next((record for record in reversed(records) if predicate(record)), None)
 
 
-def _duration_label(value: timedelta) -> str:
-    minutes = max(0, int(value.total_seconds() // 60))
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}小时{minutes:02d}分" if hours else f"{minutes}分"
+def _finite_bracket(record: Mapping[str, Any]) -> bool:
+    role = str(record.get("role", ""))
+    return is_bracket_role(role) and not role.startswith("bracketlapse-batch-")
+
+
+def _eternal_batch(record: Mapping[str, Any]) -> bool:
+    return str(record.get("role", "")).startswith("bracketlapse-batch-")
+
+
+def _sunset(record: Mapping[str, Any]) -> bool:
+    return str(record.get("role", "")).startswith("sunsetscore")

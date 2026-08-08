@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from timelapse_manager.bracketlapse import parse_hdr_ready
+from timelapse_manager.bracketlapse import parse_hdr_ready, parse_video_progress
 from timelapse_manager.errors import TaskError
 from timelapse_manager.maintenance import check_disk_space, cleanup_work_directory
 from timelapse_manager.runtime import TaskRuntime
@@ -70,13 +70,16 @@ class EternalBatchProcessor:
         total: int,
     ) -> bool:
         role = f"bracketlapse-batch-{sequence}"
+        video_started = False
 
         def handle(line: str) -> None:
+            nonlocal video_started
             event = parse_hdr_ready(line, batch_dir)
             if event is not None:
                 self.runtime.set_child_progress(
                     role,
                     completed=event.frame_number,
+                    stage="hdr",
                     phase="HDR处理",
                 )
                 if score_session is not None:
@@ -85,7 +88,27 @@ class EternalBatchProcessor:
                 self.runtime.set_phase("永续批次 HDR 融合", str(batch_dir))
             elif "Deflickering fused frames." in line:
                 self.runtime.set_phase("永续批次去闪", str(batch_dir))
+            video_event = parse_video_progress(line, batch_dir)
+            if video_event is not None:
+                self.runtime.set_child_progress(
+                    role,
+                    completed=video_event.completed,
+                    total=video_event.total,
+                    stage="video",
+                    phase="视频处理",
+                )
+                if not video_started:
+                    video_started = True
+                    self.runtime.set_phase("永续批次视频导出", str(batch_dir))
             elif "Creating video from " in line:
+                video_started = True
+                self.runtime.set_child_progress(
+                    role,
+                    completed=0,
+                    total=0,
+                    stage="video",
+                    phase="视频处理",
+                )
                 self.runtime.set_phase("永续批次视频导出", str(batch_dir))
 
         child = self.runtime.spawn(
@@ -99,6 +122,7 @@ class EternalBatchProcessor:
             role,
             completed=0,
             total=total,
+            stage="hdr",
             phase="HDR处理",
         )
         while child.poll() is None:

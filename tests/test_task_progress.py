@@ -3,184 +3,148 @@ from __future__ import annotations
 import unittest
 from datetime import datetime
 
-from timelapse_manager.ui.progress import (
-    compact_timestamp,
-    task_progress_items,
-    task_progress_label,
-)
+from timelapse_manager.ui.progress import task_progress_items, task_progress_label
+from tests.progress_test_support import MANUAL_TASK, processing_state
 
 
-class TaskProgressTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.task = {
-            "preset": "manual",
-            "capture": {
-                "start_date": "2026-07-22",
-                "start_at": "16:00",
-                "end_date": "2026-07-22",
-                "end_at": "20:00",
-            },
+class TaskProgressStageTests(unittest.TestCase):
+    def test_waiting_capture_is_zero_with_countdown_and_no_subtasks(self) -> None:
+        state = {
+            "status": "running",
+            "progress": {"main_stage": "waiting_capture"},
+            "children": [
+                {"role": "camera-timelapse", "pid": 101, "status": "running"},
+                {"role": "bracketlapse-standby", "pid": 102, "status": "running"},
+            ],
         }
 
-    def test_running_task_reports_time_until_capture_starts(self) -> None:
-        label = task_progress_label(
-            self.task,
-            {"status": "running", "phase": "守护拍摄计划"},
+        items = task_progress_items(
+            MANUAL_TASK,
+            state,
             now=datetime(2026, 7, 22, 11, 10),
         )
 
-        self.assertEqual(label, "距开始 4小时50分")
-
-    def test_compact_timestamp_hides_seconds_and_timezone(self) -> None:
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].label, "总体进度")
+        self.assertEqual(items[0].detail, "等待拍摄")
+        self.assertEqual(items[0].value, 0.0)
+        self.assertEqual(items[0].value_text, "距开始 4小时50分")
         self.assertEqual(
-            compact_timestamp("2026-07-22T11:09:04+08:00"),
-            "2026-07-22 11:09",
+            task_progress_label(
+                MANUAL_TASK,
+                state,
+                now=datetime(2026, 7, 22, 11),
+            ),
+            "等待拍摄",
         )
 
-    def test_running_task_reports_capture_percentage(self) -> None:
-        label = task_progress_label(
-            self.task,
-            {"status": "running", "phase": "正在拍摄"},
-            now=datetime(2026, 7, 22, 17),
-        )
+    def test_capture_uses_schedule_and_hides_camera_and_pids(self) -> None:
+        state = {
+            "status": "running",
+            "progress": {"main_stage": "capture"},
+            "children": [
+                {"role": "camera-timelapse", "pid": 101, "status": "running"},
+                {
+                    "role": "bracketlapse-standby",
+                    "pid": 102,
+                    "status": "running",
+                    "progress": {"stage": "hdr", "completed": 1, "total": 4},
+                },
+                {
+                    "role": "sunsetscore-resident",
+                    "pid": 103,
+                    "status": "running",
+                    "progress": {
+                        "stage": "sunset",
+                        "completed": 1,
+                        "total": 2,
+                    },
+                },
+            ],
+        }
 
-        self.assertIn("25%", label)
-        self.assertNotIn("·", label)
-        self.assertNotIn("█", label)
-
-    def test_progress_items_start_with_overall_then_each_child(self) -> None:
         items = task_progress_items(
-            self.task,
-            {
-                "status": "running",
-                "phase": "视频导出",
-                "children": [
-                    {
-                        "role": "camera-timelapse",
-                        "pid": 101,
-                        "status": "running",
-                    },
-                    {
-                        "role": "bracketlapse-standby",
-                        "pid": 102,
-                        "status": "completed",
-                    },
-                ],
-            },
+            MANUAL_TASK,
+            state,
             now=datetime(2026, 7, 22, 17),
         )
 
         self.assertEqual(
             [item.key for item in items],
-            ["overall", "children-101", "children-102"],
+            ["overall", "subtask-hdr", "subtask-sunset"],
         )
-        self.assertEqual(items[0].label, "总体进度")
+        self.assertEqual(
+            [item.label for item in items],
+            ["总体进度", "HDR处理", "晚霞评分"],
+        )
+        self.assertTrue(all("PID" not in item.label for item in items))
+        self.assertEqual(items[0].detail, "相机拍摄")
         self.assertAlmostEqual(items[0].value or 0, 0.25)
-        self.assertAlmostEqual(items[1].value or 0, 0.25)
-        self.assertEqual(items[2].value, 1.0)
-
-    def test_unknown_running_subtask_uses_indeterminate_progress(self) -> None:
-        items = task_progress_items(
-            {"preset": "eternal"},
-            {
-                "status": "running",
-                "phase": "永续拍摄中",
-                "threads": {
-                    "archive": {
-                        "status": "running",
-                        "phase": "等待归档批次",
-                    }
-                },
-            },
+        self.assertEqual(
+            task_progress_label(
+                MANUAL_TASK,
+                state,
+                now=datetime(2026, 7, 22, 17),
+            ),
+            "相机拍摄 25%",
         )
+
+    def test_waiting_processing_is_equal_weighted_and_can_retreat(self) -> None:
+        state = processing_state(hdr=(4, 4), sunset=(1, 2))
+
+        first = task_progress_items(MANUAL_TASK, state)[0]
+        state["children"][0]["progress"]["total"] = 8
+        second = task_progress_items(MANUAL_TASK, state)[0]
+
+        self.assertEqual(first.detail, "等待处理")
+        self.assertEqual(first.value, 0.75)
+        self.assertEqual(second.value, 0.5)
+        self.assertEqual(task_progress_label(MANUAL_TASK, state), "等待处理 50%")
+
+    def test_caught_up_processing_is_indeterminate_until_video_starts(self) -> None:
+        state = processing_state(hdr=(4, 4), sunset=(2, 2))
+
+        items = task_progress_items(MANUAL_TASK, state)
 
         self.assertIsNone(items[0].value)
-        self.assertIsNone(items[1].value)
-        self.assertEqual(items[1].label, "归档")
+        self.assertEqual(items[0].value_text, "处理中")
+        self.assertEqual([item.detail for item in items[1:]], ["已追平", "已追平"])
+        self.assertEqual(task_progress_label(MANUAL_TASK, state), "等待处理")
 
-    def test_nested_subtask_progress_is_normalized(self) -> None:
-        items = task_progress_items(
-            {"preset": "eternal"},
-            {
-                "status": "running",
-                "progress": {
-                    "subtasks": {
-                        "processor": {
-                            "status": "running",
-                            "progress": {"completed": 2, "total": 5},
-                        }
-                    }
-                },
-            },
-        )
+    def test_video_progress_is_main_and_only_unfinished_sunset_remains(self) -> None:
+        state = processing_state(hdr=(4, 4), sunset=(1, 3))
+        state["progress"]["main_stage"] = "video_processing"
+        state["children"][0]["progress"] = {
+            "stage": "video",
+            "completed": 2,
+            "total": 5,
+        }
 
-        self.assertAlmostEqual(items[1].value or 0, 0.4)
-        self.assertEqual(items[1].value_text, "2/5")
+        items = task_progress_items(MANUAL_TASK, state)
 
-    def test_hdr_count_progress_can_retreat_when_total_increases(self) -> None:
+        self.assertEqual([item.key for item in items], ["overall", "subtask-sunset"])
+        self.assertEqual(items[0].detail, "视频处理")
+        self.assertEqual(items[0].value, 0.4)
+        self.assertEqual(task_progress_label(MANUAL_TASK, state), "视频处理 40%")
+
+    def test_legacy_video_is_indeterminate_then_complete_on_process_exit(self) -> None:
         state = {
             "status": "running",
+            "phase": "视频导出",
+            "progress": {"main_stage": "video_processing"},
             "children": [
                 {
                     "role": "bracketlapse-standby",
-                    "pid": 102,
                     "status": "running",
-                    "progress": {"completed": 1, "total": 2},
+                    "progress": {"stage": "video", "completed": 0, "total": 0},
                 }
             ],
         }
 
-        first = task_progress_items(self.task, state)[1]
-        state["children"][0]["progress"]["total"] = 4
-        second = task_progress_items(self.task, state)[1]
-
-        self.assertEqual(first.label, "HDR处理 · PID 102")
-        self.assertEqual(first.value_text, "1/2")
-        self.assertEqual(second.value_text, "1/4")
-        self.assertEqual(first.value, 0.5)
-        self.assertEqual(second.value, 0.25)
-
-    def test_active_task_after_capture_window_is_not_reported_as_complete(self) -> None:
-        state = {"status": "running", "phase": "等待后期处理"}
-
-        items = task_progress_items(
-            self.task,
-            state,
-            now=datetime(2026, 7, 22, 20, 10),
-        )
-
-        self.assertIsNone(items[0].value)
-        self.assertEqual(
-            task_progress_label(
-                self.task,
-                state,
-                now=datetime(2026, 7, 22, 20, 10),
-            ),
-            "等待后期处理",
-        )
-
-    def test_eternal_task_reports_recorded_queue_progress(self) -> None:
-        label = task_progress_label(
-            {"preset": "eternal"},
-            {
-                "status": "running",
-                "progress": {
-                    "eternal_batches": 3,
-                    "eternal_pending_groups": 2,
-                    "eternal_archives": 1,
-                    "eternal_queue": 4,
-                },
-            },
-        )
-
-        self.assertEqual(
-            label, "持续运行 · 已归档 3 批 · 待归档 2 组 · 归档中 1 批 · 待处理 4 批"
-        )
-
-    def test_terminal_task_uses_terminal_status(self) -> None:
-        self.assertEqual(
-            task_progress_label(self.task, {"status": "completed"}), "已完成"
-        )
+        self.assertIsNone(task_progress_items(MANUAL_TASK, state)[0].value)
+        state["children"][0]["status"] = "completed"
+        self.assertEqual(task_progress_items(MANUAL_TASK, state)[0].value, 1.0)
+        self.assertEqual(task_progress_label(MANUAL_TASK, state), "视频处理 100%")
 
 
 if __name__ == "__main__":

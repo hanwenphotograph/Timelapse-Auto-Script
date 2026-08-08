@@ -7,7 +7,11 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from timelapse_manager.bracketlapse import detect_bracketlapse, parse_hdr_ready
+from timelapse_manager.bracketlapse import (
+    detect_bracketlapse,
+    parse_hdr_ready,
+    parse_video_progress,
+)
 
 
 class BracketlapseAvailabilityTests(unittest.TestCase):
@@ -61,6 +65,35 @@ class BracketlapseAvailabilityTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "路径不安全"):
                 parse_hdr_ready(unsafe, work_dir)
+
+    def test_video_events_validate_counts_and_absolute_safe_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work_dir = Path(temp_dir)
+            output = work_dir / "hdr_video" / "timelapse.mp4"
+            line = "BRACKETLAPSE_EVENT " + json.dumps(
+                {
+                    "event": "video_progress",
+                    "path": str(output),
+                    "completed": 3,
+                    "total": 8,
+                }
+            )
+
+            parsed = parse_video_progress(line, work_dir)
+
+            assert parsed is not None
+            self.assertEqual(parsed.event, "video_progress")
+            self.assertEqual((parsed.completed, parsed.total), (3, 8))
+            invalid = "BRACKETLAPSE_EVENT " + json.dumps(
+                {
+                    "event": "video_completed",
+                    "path": str(output),
+                    "completed": 7,
+                    "total": 8,
+                }
+            )
+            with self.assertRaisesRegex(ValueError, "完成全部帧"):
+                parse_video_progress(invalid, work_dir)
 
 
 if __name__ == "__main__":

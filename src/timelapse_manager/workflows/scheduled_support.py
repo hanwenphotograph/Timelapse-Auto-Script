@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 from typing import Callable, TYPE_CHECKING
 
-from timelapse_manager.bracketlapse import parse_hdr_ready
+from timelapse_manager.bracketlapse import parse_hdr_ready, parse_video_progress
 from timelapse_manager.errors import TaskError
 from timelapse_manager.maintenance import check_disk_space, cleanup_work_directory
 
@@ -61,12 +61,14 @@ def camera_output_handler(
                 runtime.set_child_progress(
                     hdr_role,
                     total=capture_rounds,
+                    stage="hdr",
                     phase="HDR处理",
                 )
             if not capture_started:
                 capture_started = True
                 if progress is not None:
                     progress.started = True
+                runtime.set_main_stage("capture")
                 runtime.set_phase("正在拍摄", f"{spec.label}任务已进入实际拍摄阶段")
                 runtime.notify_async(
                     "entered_key_node",
@@ -98,9 +100,10 @@ def bracket_output_handler(
 ) -> Callable[[str], None]:
     enfuse_started = False
     deflick_started = False
+    video_started = False
 
     def handle(line: str) -> None:
-        nonlocal enfuse_started, deflick_started
+        nonlocal enfuse_started, deflick_started, video_started
         event = parse_hdr_ready(line, spec.work_dir)
         if event is not None:
             if progress is not None:
@@ -112,6 +115,7 @@ def bracket_output_handler(
             runtime.set_child_progress(
                 child_role,
                 completed=event.frame_number,
+                stage="hdr",
                 phase="HDR处理",
             )
             if on_hdr_ready is not None:
@@ -129,7 +133,29 @@ def bracket_output_handler(
                 "entered_key_node",
                 f"simple-deflicker 开始去闪，目录 {spec.work_dir}",
             )
-        if "Creating video from " in line or line.rstrip().endswith("Done."):
+        video_event = parse_video_progress(line, spec.work_dir)
+        if video_event is not None:
+            runtime.set_main_stage("video_processing")
+            runtime.set_child_progress(
+                child_role,
+                completed=video_event.completed,
+                total=video_event.total,
+                stage="video",
+                phase="视频处理",
+            )
+            if not video_started:
+                video_started = True
+                runtime.set_phase("视频导出", str(spec.work_dir))
+        elif "Creating video from " in line:
+            video_started = True
+            runtime.set_main_stage("video_processing")
+            runtime.set_child_progress(
+                child_role,
+                completed=0,
+                total=0,
+                stage="video",
+                phase="视频处理",
+            )
             runtime.set_phase("视频导出", str(spec.work_dir))
 
     return handle

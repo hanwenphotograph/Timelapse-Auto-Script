@@ -47,10 +47,21 @@ class WorkflowProgressTests(unittest.TestCase):
         self.assertEqual(
             self.runtime.set_child_progress.call_args_list,
             [
-                call("bracketlapse-standby", total=1, phase="HDR处理"),
-                call("bracketlapse-standby", total=2, phase="HDR处理"),
+                call(
+                    "bracketlapse-standby",
+                    total=1,
+                    stage="hdr",
+                    phase="HDR处理",
+                ),
+                call(
+                    "bracketlapse-standby",
+                    total=2,
+                    stage="hdr",
+                    phase="HDR处理",
+                ),
             ],
         )
+        self.runtime.set_main_stage.assert_called_once_with("capture")
 
     def test_hdr_ready_updates_completed_count(self) -> None:
         hdr_dir = self.work_dir / "hdr_enfuse"
@@ -80,9 +91,48 @@ class WorkflowProgressTests(unittest.TestCase):
         self.runtime.set_child_progress.assert_called_once_with(
             "bracketlapse-standby",
             completed=1,
+            stage="hdr",
             phase="HDR处理",
         )
         ready.assert_called_once_with()
+
+    def test_video_event_switches_main_and_child_stage(self) -> None:
+        output = self.work_dir / "hdr_video" / "timelapse.mp4"
+        event = "BRACKETLAPSE_EVENT " + json.dumps(
+            {
+                "event": "video_progress",
+                "path": str(output),
+                "completed": 2,
+                "total": 5,
+            }
+        )
+        handle = bracket_output_handler(self.runtime, self.spec)
+
+        handle(event)
+
+        self.runtime.set_main_stage.assert_called_once_with("video_processing")
+        self.runtime.set_child_progress.assert_called_once_with(
+            "bracketlapse-standby",
+            completed=2,
+            total=5,
+            stage="video",
+            phase="视频处理",
+        )
+        self.runtime.set_phase.assert_called_once_with("视频导出", str(self.work_dir))
+
+    def test_human_video_log_uses_indeterminate_fallback(self) -> None:
+        handle = bracket_output_handler(self.runtime, self.spec)
+
+        handle("Creating video from hdr_deflick frames.")
+
+        self.runtime.set_main_stage.assert_called_once_with("video_processing")
+        self.runtime.set_child_progress.assert_called_once_with(
+            "bracketlapse-standby",
+            completed=0,
+            total=0,
+            stage="video",
+            phase="视频处理",
+        )
 
 
 if __name__ == "__main__":

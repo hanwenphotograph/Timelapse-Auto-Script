@@ -69,6 +69,16 @@ class IntegrationTests(unittest.TestCase):
         self.assertIsInstance(started.get("runner_pid"), int)
         state = self.wait_terminal(task["id"])
         self.assertEqual(state["status"], "completed", state)
+        self.assertEqual(state["progress"]["main_stage"], "video_processing")
+        bracket = next(
+            child
+            for child in state["children"]
+            if child["role"] == "bracketlapse-standby"
+        )
+        self.assertEqual(
+            bracket["progress"],
+            {"stage": "video", "completed": 2, "total": 2},
+        )
         output_root = self.root / "output"
         videos = list(output_root.rglob("timelapse.mp4"))
         raw_images = list(output_root.rglob("0001_0.jpg"))
@@ -95,6 +105,18 @@ class IntegrationTests(unittest.TestCase):
         state = self.wait_terminal(task["id"], timeout=15)
         self.assertEqual(state["status"], "completed", state)
         self.assertTrue(list((self.root / "output").rglob("timelapse.mp4")))
+        batch_children = [
+            child
+            for child in state["children"]
+            if child["role"].startswith("bracketlapse-batch-")
+        ]
+        self.assertTrue(batch_children)
+        self.assertTrue(
+            all(
+                child.get("progress", {}).get("stage") == "video"
+                for child in batch_children
+            )
+        )
         self.assertFalse(
             list((self.root / "output" / ".eternal" / "queue").glob("*.ready.yaml"))
         )

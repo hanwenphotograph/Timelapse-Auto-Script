@@ -20,6 +20,7 @@ from timelapse_manager.dependency_manager.runtime_dependencies import (
 from timelapse_manager.io_utils import now_iso
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.process_utils import process_identity
+from timelapse_manager.progress_stages import MAIN_STAGES, validate_main_stage
 from timelapse_manager.sunset_score import SunsetScoreService
 from timelapse_manager.task_store import TaskStore
 from timelapse_manager.webhook import WebhookClient
@@ -118,12 +119,30 @@ class TaskRuntime:
             self.state["progress"] = progress
             self.store.write_state(self.task_id, self.state)
 
+    def set_main_stage(self, stage: str) -> bool:
+        """Advance the persisted finite-task state machine without regressions."""
+        validate_main_stage(stage)
+        with self._state_lock:
+            progress = dict(self.state.get("progress", {}))
+            current = progress.get("main_stage")
+            if current == stage:
+                return False
+            if current in MAIN_STAGES and MAIN_STAGES.index(stage) < MAIN_STAGES.index(
+                current
+            ):
+                return False
+            progress["main_stage"] = stage
+            self.state["progress"] = progress
+            self.store.write_state(self.task_id, self.state)
+            return True
+
     def set_child_progress(
         self,
         role: str,
         *,
         completed: int | None = None,
         total: int | None = None,
+        stage: str | None = None,
         phase: str | None = None,
     ) -> bool:
         with self._state_lock:
@@ -132,6 +151,7 @@ class TaskRuntime:
                 role,
                 completed=completed,
                 total=total,
+                stage=stage,
                 phase=phase,
             )
             if not changed:
