@@ -7,9 +7,9 @@ from datetime import datetime
 
 from timelapse_manager.errors import ConfigError, TaskError
 from timelapse_manager.runtime import HardStopRequested, TaskRuntime
+from timelapse_manager.workflows.scheduled_finish import ScheduledFinisher
 from timelapse_manager.workflows.scheduled_support import (
     CaptureProgress,
-    ScheduledFinisher,
     WorkSpec,
     bracket_output_handler,
     camera_output_handler,

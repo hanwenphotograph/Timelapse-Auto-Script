@@ -75,7 +75,8 @@ class SunsetScoreIntegrationTestCase(unittest.TestCase):
         self.service.store.save_text(task["id"], yaml_text(definition))
         self.service.start_task(task["id"])
         state = self._wait_terminal(task["id"])
-        work_dir = Path(definition["capture"]["work_dir"])
+        final_path = state.get("progress", {}).get("album_path")
+        work_dir = Path(final_path or definition["capture"]["work_dir"])
         log = self.service.store.log_path(task["id"]).read_text(encoding="utf-8")
         return state, work_dir, log
 

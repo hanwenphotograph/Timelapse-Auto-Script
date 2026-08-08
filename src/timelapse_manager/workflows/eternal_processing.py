@@ -8,16 +8,26 @@ from typing import Any
 
 from timelapse_manager.bracketlapse import parse_hdr_ready, parse_video_progress
 from timelapse_manager.errors import TaskError
-from timelapse_manager.maintenance import check_disk_space, cleanup_work_directory
 from timelapse_manager.runtime import TaskRuntime
+from timelapse_manager.workflows.eternal_finish import EternalBatchFinisher
 
 
 class EternalBatchProcessor:
-    def __init__(self, runtime: TaskRuntime, state_dir: Path, capture_dir: Path):
+    def __init__(
+        self,
+        runtime: TaskRuntime,
+        state_dir: Path,
+        capture_dir: Path,
+        album_lock: Any,
+    ):
         self.runtime = runtime
         self.task = runtime.task
-        self.state_dir = state_dir
-        self.capture_dir = capture_dir
+        self.finisher = EternalBatchFinisher(
+            runtime,
+            state_dir,
+            capture_dir,
+            album_lock,
+        )
 
     def process(self, data: dict[str, Any]) -> bool:
         sequence = int(data["sequence"])
@@ -53,11 +63,14 @@ class EternalBatchProcessor:
             self.runtime.webhook.notify_image(
                 "webhook-image", f"图片推送：{label}", batch_dir
             )
-        if not self._cleanup(sequence, batch_dir, score_decision):
+        try:
+            final_dir = self.finisher.finish(sequence, batch_dir, score_decision)
+        except TaskError:
             return False
-        self._check_disk(batch_dir)
+        if final_dir is None:
+            return False
         self.runtime.notify_async(
-            "ended", f"永续批次 {sequence} 已完成处理、导出和清理，目录 {batch_dir}"
+            "ended", f"永续批次 {sequence} 已完成处理、导出和清理，目录 {final_dir}"
         )
         return True
 
@@ -146,43 +159,6 @@ class EternalBatchProcessor:
         except TaskError as exc:
             self.runtime.log(f"永续批次 {sequence} 晚霞评分失败: {exc}")
             return False
-
-    def _cleanup(self, sequence: int, batch_dir: Path, score_decision) -> bool:
-        cleanup = self.task["cleanup"]
-        if not cleanup.get("enabled"):
-            return True
-        try:
-            keep_directories = list(cleanup["keep_directories"])
-            if (
-                score_decision not in (None, False)
-                and score_decision.retained_hdr
-                and "hdr_enfuse" not in keep_directories
-            ):
-                keep_directories.append("hdr_enfuse")
-            cleanup_work_directory(
-                batch_dir,
-                keep_directories,
-                self.runtime.log,
-                protected_paths=[
-                    self.runtime.paths.root,
-                    self.runtime.auto_root,
-                    self.state_dir,
-                    self.capture_dir,
-                ],
-            )
-        except (OSError, TaskError) as exc:
-            self.runtime.log(f"永续批次 {sequence} 清理失败: {exc}")
-            return False
-        return True
-
-    def _check_disk(self, batch_dir: Path) -> None:
-        threshold = float(self.runtime.project["disk_space_warning_threshold_gb"])
-        remaining = check_disk_space(batch_dir, threshold, self.runtime.log)
-        if threshold > 0 and remaining < threshold:
-            self.runtime.notify_async(
-                "disk_space_warning",
-                f"磁盘剩余 {remaining:.2f}GB，低于阈值 {threshold:g}GB",
-            )
 
     @staticmethod
     def _environment(data: dict[str, Any]) -> dict[str, str]:

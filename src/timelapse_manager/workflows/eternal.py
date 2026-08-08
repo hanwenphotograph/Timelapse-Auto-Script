@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from timelapse_manager.album_naming import date_album_path
 from timelapse_manager.errors import ConfigError, TaskError
 from timelapse_manager.io_utils import (
     load_json,
@@ -66,7 +67,10 @@ class EternalWorkflow:
         self._processor_failures: list[str] = []
         self._batches_dispatched = 0
         self._batch_processor = EternalBatchProcessor(
-            runtime, self.state_dir, self.capture_dir
+            runtime,
+            self.state_dir,
+            self.capture_dir,
+            self._archive_lock,
         )
 
     def run(self) -> None:
@@ -230,7 +234,10 @@ class EternalWorkflow:
     def _create_batch_directory(self, start_epoch: float, end_epoch: float) -> Path:
         start = datetime.fromtimestamp(start_epoch).astimezone()
         end = datetime.fromtimestamp(end_epoch).astimezone()
-        parent = self.runtime.auto_root / start.strftime("%Y-%m-%d")
+        parent = date_album_path(
+            self.runtime.auto_root,
+            start.strftime("%Y-%m-%d"),
+        )
         parent.mkdir(parents=True, exist_ok=True)
         stem = f"{start:%H%M}-{end:%H%M}"
         candidate = parent / stem
@@ -263,17 +270,18 @@ class EternalWorkflow:
         start_epoch = min(path.stat().st_mtime for path in all_files)
         end_epoch = max(path.stat().st_mtime for path in all_files)
         sequence = self._next_sequence()
-        batch_dir = self._create_batch_directory(start_epoch, end_epoch)
-        manifest = self.state_dir / f"archive.{sequence:08d}.yaml"
-        manifest_data = {
-            "sequence": sequence,
-            "batch_dir": str(batch_dir),
-            "groups": selected,
-            "files": [str(path) for path in all_files],
-            "start_epoch": start_epoch,
-            "end_epoch": end_epoch,
-        }
-        save_yaml(manifest, manifest_data)
+        with self._archive_lock:
+            batch_dir = self._create_batch_directory(start_epoch, end_epoch)
+            manifest = self.state_dir / f"archive.{sequence:08d}.yaml"
+            manifest_data = {
+                "sequence": sequence,
+                "batch_dir": str(batch_dir),
+                "groups": selected,
+                "files": [str(path) for path in all_files],
+                "start_epoch": start_epoch,
+                "end_epoch": end_epoch,
+            }
+            save_yaml(manifest, manifest_data)
         selected_groups = {int(item["group"]) for item in selected}
         self._pending = [
             item for item in self._pending if int(item["group"]) not in selected_groups
@@ -290,60 +298,62 @@ class EternalWorkflow:
         if full_batch and self.runtime.finish_after_current.is_set():
             self._batch_boundary.set()
 
-    def _complete_archive(self, manifest: Path, data: dict[str, Any]) -> None:
-        sequence = int(data["sequence"])
-        batch_dir = Path(str(data["batch_dir"]))
-        batch_dir.mkdir(parents=True, exist_ok=True)
-        groups = [int(item["group"]) for item in data["groups"]]
-        source_files = [Path(str(value)) for value in data.get("files", [])]
-        if not source_files:
-            source_files = [
-                path for group in groups for path in self._group_files(group)
-            ]
-        for image in source_files:
-            destination = batch_dir / image.name
-            if destination.exists():
-                continue
-            if not image.is_file():
-                raise TaskError(f"归档源图片缺失: {image}")
-            shutil.move(str(image), str(destination))
-        start = datetime.fromtimestamp(float(data["start_epoch"])).astimezone()
-        end = datetime.fromtimestamp(float(data["end_epoch"])).astimezone()
-        (batch_dir / ".eternal-batch.tsv").write_text(
-            f"{start:%Y-%m-%d}\t{start:%H:%M}\t{end:%H:%M}\n", encoding="utf-8"
-        )
-        marker = self.queue_dir / f"{sequence:08d}.ready.yaml"
-        save_yaml(
-            marker,
-            {
-                "sequence": sequence,
-                "batch_dir": str(batch_dir),
-                "work_date": start.strftime("%Y-%m-%d"),
-                "start_at": start.strftime("%H:%M"),
-                "end_at": end.strftime("%H:%M"),
-                "queued_at": now_iso(),
-            },
-        )
+    def _complete_archive(self, manifest: Path) -> None:
         with self._archive_lock:
+            data = load_yaml(manifest)
+            sequence = int(data["sequence"])
+            batch_dir = Path(str(data["batch_dir"]))
+            batch_dir.mkdir(parents=True, exist_ok=True)
+            groups = [int(item["group"]) for item in data["groups"]]
+            source_files = [Path(str(value)) for value in data.get("files", [])]
+            if not source_files:
+                source_files = [
+                    path for group in groups for path in self._group_files(group)
+                ]
+            for image in source_files:
+                destination = batch_dir / image.name
+                if destination.exists():
+                    continue
+                if not image.is_file():
+                    raise TaskError(f"归档源图片缺失: {image}")
+                shutil.move(str(image), str(destination))
+            start = datetime.fromtimestamp(float(data["start_epoch"])).astimezone()
+            end = datetime.fromtimestamp(float(data["end_epoch"])).astimezone()
+            (batch_dir / ".eternal-batch.tsv").write_text(
+                f"{start:%Y-%m-%d}\t{start:%H:%M}\t{end:%H:%M}\n",
+                encoding="utf-8",
+            )
+            marker = self.queue_dir / f"{sequence:08d}.ready.yaml"
+            save_yaml(
+                marker,
+                {
+                    "sequence": sequence,
+                    "batch_dir": str(batch_dir),
+                    "work_date": start.strftime("%Y-%m-%d"),
+                    "start_at": start.strftime("%H:%M"),
+                    "end_at": end.strftime("%H:%M"),
+                    "queued_at": now_iso(),
+                },
+            )
             group_set = set(groups)
             self._pending = [
                 item for item in self._pending if int(item["group"]) not in group_set
             ]
             self._known_groups -= group_set
             self._save_pending()
-        manifest.unlink(missing_ok=True)
-        image_count = sum(
-            1
-            for path in batch_dir.iterdir()
-            if path.is_file() and not path.name.startswith(".")
-        )
-        self.runtime.log(
-            f"永续批次 {sequence} 已进入处理队列，组数={len(groups)}，图片={image_count}，目录={batch_dir}"
-        )
-        self.runtime.notify_async(
-            "eternal_batch_queued",
-            f"永续批次 {sequence} 已归档并进入处理队列，目录 {batch_dir}",
-        )
+            manifest.unlink(missing_ok=True)
+            image_count = sum(
+                1
+                for path in batch_dir.iterdir()
+                if path.is_file() and not path.name.startswith(".")
+            )
+            self.runtime.log(
+                f"永续批次 {sequence} 已进入处理队列，组数={len(groups)}，图片={image_count}，目录={batch_dir}"
+            )
+            self.runtime.notify_async(
+                "eternal_batch_queued",
+                f"永续批次 {sequence} 已归档并进入处理队列，目录 {batch_dir}",
+            )
 
     def _recover_archives(self) -> None:
         for manifest in sorted(self.state_dir.glob("archive.*.yaml")):
@@ -371,7 +381,7 @@ class EternalWorkflow:
             try:
                 while manifest.exists() and not self.runtime.hard_stop.is_set():
                     try:
-                        self._complete_archive(manifest, load_yaml(manifest))
+                        self._complete_archive(manifest)
                         break
                     except (
                         OSError,

@@ -38,6 +38,9 @@ class SunsetScoreIntegrationTests(SunsetScoreIntegrationTestCase):
         )
 
         self.assertEqual(state["status"], "completed", state)
+        self.assertTrue(work_dir.parent.name.endswith("-S4"))
+        self.assertTrue(work_dir.name.endswith("-S4"))
+        self.assertEqual(state["progress"]["sunset_score"], 4)
         self.assertTrue((work_dir / "hdr_enfuse" / "frame-0001.jpg").exists())
         self.assertTrue((work_dir / "hdr_video" / "timelapse.mp4").exists())
 
@@ -100,6 +103,10 @@ class SunsetScoreIntegrationTests(SunsetScoreIntegrationTestCase):
 
         self.assertEqual(state["status"], "completed", state)
         self.assertTrue(list((self.root / "output").rglob("hdr_enfuse/frame-0001.jpg")))
+        scored_albums = [
+            path for path in (self.root / "output").glob("*-S4/*-S4") if path.is_dir()
+        ]
+        self.assertTrue(scored_albums)
 
     def test_standby_scores_before_capture_finishes_and_reuses_model(
         self,

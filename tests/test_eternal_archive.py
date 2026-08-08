@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from timelapse_manager.io_utils import load_yaml
 from timelapse_manager.workflows.eternal import EternalWorkflow
 
 
@@ -68,7 +67,7 @@ class EternalArchiveTests(unittest.TestCase):
             self.assertEqual(workflow._pending, [])
             self.assertEqual(workflow._known_groups, {1, 2})
             manifest = workflow._archive_queue.get_nowait()
-            workflow._complete_archive(manifest, load_yaml(manifest))
+            workflow._complete_archive(manifest)
             self.assertEqual(workflow._known_groups, set())
             self.assertTrue((workflow.queue_dir / "00000001.ready.yaml").exists())
 

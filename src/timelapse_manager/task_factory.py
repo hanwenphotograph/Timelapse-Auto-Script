@@ -6,6 +6,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
+from timelapse_manager.album_naming import date_album_path
 from timelapse_manager.config import LoadedConfig
 from timelapse_manager.errors import ConfigError
 from timelapse_manager.io_utils import deep_merge, now_iso
@@ -79,9 +80,14 @@ def materialize_scheduled(
     project = config.project
     slot = select_next_slot(project["morning"], project["dusk"], now)
     chain_name = str((continuation or {}).get("chain_name") or name).strip() or task_id
-    display_name = _slot_name(chain_name, slot) if source_preset == "scheduled_loop" else name
+    display_name = (
+        _slot_name(chain_name, slot) if source_preset == "scheduled_loop" else name
+    )
     task = _common(task_id, display_name, "manual")
-    work_dir = config.auto_root / slot.work_date.isoformat() / slot.directory_name
+    work_dir = (
+        date_album_path(config.auto_root, slot.work_date.isoformat())
+        / slot.directory_name
+    )
     task["capture"] = {
         "work_dir": str(work_dir),
         "start_date": slot.work_date.isoformat(),
