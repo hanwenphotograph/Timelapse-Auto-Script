@@ -18,6 +18,7 @@ def cleanup_work_directory(
     log: LogCallback,
     *,
     protected_paths: list[Path] | None = None,
+    preserve_names: set[str] | frozenset[str] | None = None,
 ) -> None:
     target = directory.expanduser().resolve()
     anchor = Path(target.anchor).resolve()
@@ -27,7 +28,7 @@ def cleanup_work_directory(
         raise TaskError(f"拒绝清理不安全的目录: {target}")
     if not target.is_dir():
         raise TaskError(f"清理目录不存在: {target}")
-    keep_set = set(keep)
+    keep_set = set(keep) | set(preserve_names or ())
     log(f"清理工作目录，仅保留: {', '.join(sorted(keep_set)) or '无'}")
     for entry in target.iterdir():
         if entry.name in keep_set:

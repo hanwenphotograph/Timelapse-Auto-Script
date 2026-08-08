@@ -42,6 +42,7 @@ DEFAULT_PROJECT_CONFIG: dict[str, Any] = {
         "startup_probe_seconds": 2,
         "stop_timeout_seconds": 10,
         "retry_delay_seconds": 300,
+        "max_retry_attempts": 3,
         "task_history_retention_days": 30,
     },
     "eternal": {
@@ -109,6 +110,7 @@ def validate_project_config(data: dict[str, Any]) -> None:
     _number(runtime, "startup_probe_seconds", 0)
     _number(runtime, "stop_timeout_seconds", 0.1)
     _number(runtime, "retry_delay_seconds", 0)
+    _number(runtime, "max_retry_attempts", 0, integer=True)
     _number(runtime, "task_history_retention_days", 1, integer=True)
 
     eternal = data.get("eternal")

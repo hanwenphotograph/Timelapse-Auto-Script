@@ -31,8 +31,15 @@ class WorkSpec:
         )
 
 
+@dataclass
+class CaptureProgress:
+    started: bool = False
+
+
 def camera_output_handler(
-    runtime: TaskRuntime, spec: WorkSpec
+    runtime: TaskRuntime,
+    spec: WorkSpec,
+    progress: CaptureProgress | None = None,
 ) -> Callable[[str], None]:
     capture_started = False
     capture_ended = False
@@ -41,6 +48,8 @@ def camera_output_handler(
         nonlocal capture_started, capture_ended
         if "Starting capture round " in line and not capture_started:
             capture_started = True
+            if progress is not None:
+                progress.started = True
             runtime.set_phase("正在拍摄", f"{spec.label}任务已进入实际拍摄阶段")
             runtime.notify_async(
                 "entered_key_node",
@@ -100,7 +109,15 @@ class ScheduledFinisher:
         self.task = runtime.task
         self.project = runtime.project
 
-    def finish(self, spec: WorkSpec, success: bool, score_session=None) -> bool:
+    def finish(
+        self,
+        spec: WorkSpec,
+        success: bool,
+        score_session=None,
+        *,
+        capture_started: bool = True,
+        preserve_names: frozenset[str] = frozenset(),
+    ) -> bool:
         score_decision = None
         score_attempted = False
         protect_hdr = False
@@ -123,7 +140,12 @@ class ScheduledFinisher:
                     protect_hdr = score_decision.retained_hdr
 
         cleanup = self.task["cleanup"]
-        if cleanup.get("enabled") and (success or cleanup.get("on_failure")):
+        cleanup_requested = cleanup.get("enabled") and (
+            success or cleanup.get("on_failure")
+        )
+        if cleanup_requested and not success and not capture_started:
+            self.runtime.log("拍摄尚未开始，跳过失败清理以保护工作目录")
+        elif cleanup_requested:
             try:
                 keep_directories = list(cleanup["keep_directories"])
                 if protect_hdr and "hdr_enfuse" not in keep_directories:
@@ -136,6 +158,7 @@ class ScheduledFinisher:
                         self.runtime.paths.root,
                         self.runtime.auto_root,
                     ],
+                    preserve_names=preserve_names,
                 )
             except (OSError, TaskError) as exc:
                 self.runtime.log(f"清理工作目录失败: {exc}")

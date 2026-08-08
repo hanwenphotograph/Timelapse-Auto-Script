@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from timelapse_manager.dependency_manager.paths import RESERVED_ENVIRONMENT_KEYS
 from timelapse_manager.errors import ConfigError
 from timelapse_manager.io_utils import deep_merge
 
@@ -83,6 +84,13 @@ def _validate_continuation(task: dict[str, Any]) -> None:
     sequence = continuation.get("sequence")
     if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1:
         raise ConfigError("continuation.sequence 必须是正整数")
+    retry_attempt = continuation.get("retry_attempt", 0)
+    if (
+        isinstance(retry_attempt, bool)
+        or not isinstance(retry_attempt, int)
+        or retry_attempt < 0
+    ):
+        raise ConfigError("continuation.retry_attempt 必须是非负整数")
     previous = continuation.get("previous_task_id")
     if previous is not None and (
         not isinstance(previous, str) or not previous.strip()
@@ -152,3 +160,6 @@ def validate_task(task: dict[str, Any], *, for_start: bool = False) -> None:
         for key, value in task["environment"].items()
     ):
         raise ConfigError("environment 的键必须是字符串，值必须是标量")
+    reserved = sorted(set(task["environment"]) & RESERVED_ENVIRONMENT_KEYS)
+    if reserved:
+        raise ConfigError("environment 不能覆盖私有依赖环境字段: " + ", ".join(reserved))

@@ -8,6 +8,7 @@ from typing import Literal
 
 
 DependencyState = Literal["ready", "missing", "issue", "outdated", "checking"]
+Bootstrap = Literal["python", "homebrew"]
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,7 @@ class DependencySpec:
     required: bool
     action_id: str | None = None
     action_label: str = "快速安装"
+    selectable_branches: bool = False
 
 
 @dataclass(frozen=True)
@@ -45,11 +47,23 @@ class DependencyStatus:
     state: DependencyState
     detail: str
     build_info: DependencyBuildInfo | None = None
+    available_branches: tuple[str, ...] = ()
+    selected_branch: str | None = None
     action_available: bool = False
 
     @property
     def ready(self) -> bool:
         return self.state == "ready"
+
+
+@dataclass(frozen=True)
+class InstallPlan:
+    command: tuple[str, ...]
+    confirmation: str
+    progress_sizes: tuple[tuple[str, int], ...] = ()
+    bootstrap: Bootstrap | None = None
+    environment: tuple[tuple[str, str], ...] = ()
+    post_install: str | None = None
 
 
 def _format_build_time(value: str) -> str:

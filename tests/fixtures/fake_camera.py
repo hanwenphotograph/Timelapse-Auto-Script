@@ -5,11 +5,15 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
 from pathlib import Path
 
 
 def main() -> int:
+    if "--version" in sys.argv[1:]:
+        print("camera-timelapse 0.2.0")
+        return 0
     parser = argparse.ArgumentParser()
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--start-at")
@@ -19,6 +23,9 @@ def main() -> int:
     parser.add_argument("--interval")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    if os.environ.get("FAKE_CAMERA_FAIL_BEFORE_CAPTURE"):
+        (args.output_dir / "pre-capture.tmp").write_bytes(b"not-a-capture")
+        return int(os.environ.get("FAKE_CAMERA_EXIT_CODE", "7"))
     rounds = int(os.environ.get("FAKE_CAMERA_ROUNDS", "2"))
     delay = float(os.environ.get("FAKE_CAMERA_DELAY", "0.04"))
     for group in range(1, rounds + 1):

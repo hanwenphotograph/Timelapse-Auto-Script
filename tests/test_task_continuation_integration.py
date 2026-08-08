@@ -16,6 +16,7 @@ from timelapse_manager.io_utils import load_yaml, save_yaml
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.service import ManagerService
 from timelapse_manager.task_store import ACTIVE_STATUSES
+from tests.managed_dependency_support import install_fake_native_tools
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -31,6 +32,7 @@ class TaskContinuationIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        install_fake_native_tools(self.root)
         paths = AppPaths.discover(self.root)
         manager = ConfigManager(paths)
         manager.ensure()
@@ -112,6 +114,31 @@ class TaskContinuationIntegrationTests(unittest.TestCase):
         time.sleep(0.3)
         tasks = self._chain_tasks(first["continuation"]["chain_id"])
         self.assertEqual(len(tasks), 2)
+
+    def test_failed_chain_stops_after_configured_retry_limit(self) -> None:
+        project = load_yaml(self.paths.config_file)
+        project["runtime"]["retry_delay_seconds"] = 0.05
+        project["runtime"]["max_retry_attempts"] = 1
+        save_yaml(self.paths.config_file, project)
+        self.service.reload()
+        environment = {
+            "FAKE_CAMERA_ROUNDS": "1",
+            "FAKE_CAMERA_DELAY": "0.01",
+            "FAKE_CAMERA_EXIT_CODE": "7",
+        }
+        with patch.dict(os.environ, environment, clear=False):
+            first = self.service.create_task("重试上限", "scheduled_loop")
+            self.service.start_task(first["id"])
+            second = self._wait_for_successor(first["id"])
+            second_state = self._wait_terminal(second["id"])
+
+        self.assertEqual(second_state["status"], "failed", second_state)
+        time.sleep(0.3)
+        tasks = self._chain_tasks(first["continuation"]["chain_id"])
+        self.assertEqual(len(tasks), 2)
+        self.assertEqual(second["continuation"]["retry_attempt"], 1)
+        log = self.service.store.log_path(second["id"]).read_text(encoding="utf-8")
+        self.assertIn("连续失败已达到重试上限 1 次", log)
 
     def _wait_for_successor(self, first_id: str, timeout: float = 8) -> dict:
         deadline = time.monotonic() + timeout

@@ -10,13 +10,15 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from timelapse_manager.bracketlapse import detect_bracketlapse
 from timelapse_manager.child_process import ManagedChild
 from timelapse_manager.config import ConfigManager
+from timelapse_manager.dependency_manager.paths import DependencyPaths
+from timelapse_manager.dependency_manager.runtime_dependencies import (
+    resolve_runtime_commands,
+)
 from timelapse_manager.io_utils import now_iso
-from timelapse_manager.errors import ConfigError
 from timelapse_manager.paths import AppPaths
-from timelapse_manager.process_utils import process_identity, resolve_command
+from timelapse_manager.process_utils import process_identity
 from timelapse_manager.sunset_score import SunsetScoreService
 from timelapse_manager.task_store import TaskStore
 from timelapse_manager.webhook import WebhookClient
@@ -41,16 +43,14 @@ class TaskRuntime:
         self.poll_interval = float(self.runtime_options["poll_interval_seconds"])
         self.stop_timeout = float(self.runtime_options["stop_timeout_seconds"])
         commands = self.project["commands"]
-        self.camera_command = resolve_command(commands["camera"])
-        self.bracket_command: list[str] = []
-        if self.task["processing"].get("enabled", True):
-            bracket = detect_bracketlapse(
-                str(commands["bracketlapse"]),
-                str(commands.get("bracketlapse_fallback") or "") or None,
-            )
-            if not bracket.enabled:
-                raise ConfigError(f"Bracketlapse 不可用：{bracket.reason}")
-            self.bracket_command = list(bracket.command)
+        self.dependency_paths = DependencyPaths.discover(self.paths.root)
+        resolved = resolve_runtime_commands(
+            self.paths.root,
+            commands,
+            processing_enabled=bool(self.task["processing"].get("enabled", True)),
+        )
+        self.camera_command = list(resolved.camera)
+        self.bracket_command = list(resolved.bracketlapse)
 
         self._state_lock = threading.RLock()
         self._children_lock = threading.RLock()
@@ -185,6 +185,7 @@ class TaskRuntime:
         environment.update(
             {str(key): str(value) for key, value in self.task["environment"].items()}
         )
+        environment = self.dependency_paths.runtime_environment(environment)
         if extra_env:
             environment.update(
                 {str(key): str(value) for key, value in extra_env.items()}

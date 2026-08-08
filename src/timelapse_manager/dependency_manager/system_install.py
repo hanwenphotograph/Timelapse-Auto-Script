@@ -1,60 +1,84 @@
-"""Select supported system package-manager commands."""
+"""Create commands that install native tools into the private prefix."""
 
 from __future__ import annotations
 
-import os
 import platform
-import shutil
-from pathlib import Path
+import re
+import subprocess
+from collections.abc import Callable, Mapping, Sequence
+
+from timelapse_manager.dependency_manager.paths import DependencyPaths
+from timelapse_manager.errors import ProcessError
 
 
-def system_install_command(package: str) -> tuple[str, ...] | None:
-    system = platform.system().lower()
-    if system == "darwin":
-        brew = _find_program("brew")
-        formula = {"gphoto2": "gphoto2", "ffmpeg": "ffmpeg"}.get(package)
-        return (brew, "install", formula) if brew and formula else None
-    if system == "linux":
-        return _apt_command(package)
-    if system == "windows" and package == "ffmpeg":
-        winget = shutil.which("winget")
-        if winget:
-            return (
-                winget,
-                "install",
-                "--id",
-                "Gyan.FFmpeg",
-                "--exact",
-                "--accept-package-agreements",
-                "--accept-source-agreements",
-            )
-    return None
+RunCommand = Callable[..., subprocess.CompletedProcess[str]]
+FORMULA_NAME = re.compile(r"[A-Za-z0-9@+_.-]+(?:/[A-Za-z0-9@+_.-]+)*")
 
 
-def _apt_command(package: str) -> tuple[str, ...] | None:
-    apt = shutil.which("apt-get")
-    packages = {
-        "gphoto2": ("gphoto2",),
-        "ffmpeg": ("ffmpeg",),
-        "hugin": ("enblend", "hugin-tools"),
-    }.get(package)
-    if not apt or not packages:
+def system_install_command(
+    package: str,
+    paths: DependencyPaths,
+    *,
+    system: str | None = None,
+) -> tuple[str, ...] | None:
+    current = (system or platform.system()).lower()
+    if current not in {"darwin", "linux"}:
         return None
-    prefix: tuple[str, ...] = ()
-    if hasattr(os, "geteuid") and os.geteuid() != 0:
-        pkexec = shutil.which("pkexec")
-        if not pkexec:
-            return None
-        prefix = (pkexec,)
-    return (*prefix, apt, "install", "-y", *packages)
-
-
-def _find_program(name: str) -> str | None:
-    found = shutil.which(name)
-    if found:
-        return found
-    for directory in (Path("/opt/homebrew/bin"), Path("/usr/local/bin")):
-        candidate = directory / name
-        if candidate.is_file():
-            return str(candidate)
+    brew = str(paths.homebrew_executable)
+    formula = {"gphoto2": "gphoto2", "ffmpeg": "ffmpeg"}.get(package)
+    if formula:
+        return brew, "install", "--force-bottle", formula
+    if package == "hugin" and current == "darwin":
+        return (
+            brew,
+            "install",
+            "--cask",
+            f"--appdir={paths.applications_dir}",
+            "hugin",
+        )
     return None
+
+
+def expand_formula_install_command(
+    command: Sequence[str],
+    environment: Mapping[str, str],
+    *,
+    run: RunCommand = subprocess.run,
+) -> tuple[str, ...]:
+    values = tuple(command)
+    if len(values) != 4 or values[1:3] != ("install", "--force-bottle"):
+        return values
+    formula = values[3]
+    try:
+        completed = run(
+            [
+                values[0],
+                "deps",
+                "--formula",
+                "--include-build",
+                "--topological",
+                formula,
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            check=False,
+            env=dict(environment),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProcessError(f"无法解析 {formula} 的私有 bottle 依赖：{exc}") from exc
+    if completed.returncode:
+        detail = completed.stderr.strip() or f"退出码 {completed.returncode}"
+        raise ProcessError(f"无法解析 {formula} 的私有 bottle 依赖：{detail}")
+    dependencies = []
+    for line in completed.stdout.splitlines():
+        name = line.strip()
+        if not name:
+            continue
+        if not FORMULA_NAME.fullmatch(name):
+            raise ProcessError(f"Homebrew 返回了无效的 formula 名称：{name}")
+        dependencies.append(name)
+    targets = tuple(dict.fromkeys((*dependencies, formula)))
+    return values[:3] + targets

@@ -31,6 +31,7 @@ runtime:
   startup_probe_seconds: 2
   stop_timeout_seconds: 10
   retry_delay_seconds: 300
+  max_retry_attempts: 3
   task_history_retention_days: 30
 
 eternal:

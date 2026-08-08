@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 import json
 import subprocess
@@ -19,6 +19,7 @@ def inspect_build_info(
     *,
     timeout: float = 5.0,
     run: RunCommand = subprocess.run,
+    env: Mapping[str, str] | None = None,
 ) -> DependencyBuildInfo | None:
     try:
         completed = run(
@@ -27,6 +28,7 @@ def inspect_build_info(
             text=True,
             timeout=timeout,
             check=False,
+            env=dict(env) if env is not None else None,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -37,6 +39,18 @@ def inspect_build_info(
         return _parse_document(document)
     except (json.JSONDecodeError, ValueError):
         return None
+
+
+def matching_build_info(
+    command: Sequence[str],
+    version: str | None,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> DependencyBuildInfo | None:
+    build_info = inspect_build_info(command, env=env)
+    if build_info is not None and build_info.version == version:
+        return build_info
+    return DependencyBuildInfo(version) if version is not None else None
 
 
 def _parse_document(value: Any) -> DependencyBuildInfo:

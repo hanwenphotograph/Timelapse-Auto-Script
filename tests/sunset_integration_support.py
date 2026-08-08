@@ -11,6 +11,7 @@ from timelapse_manager.io_utils import load_yaml, save_yaml, yaml_text
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.service import ManagerService
 from timelapse_manager.task_store import ACTIVE_STATUSES
+from tests.managed_dependency_support import install_fake_native_tools
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -27,6 +28,7 @@ class SunsetScoreIntegrationTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        install_fake_native_tools(self.root)
         self.paths = AppPaths.discover(self.root)
         manager = ConfigManager(self.paths)
         manager.ensure()

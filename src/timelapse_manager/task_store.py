@@ -173,6 +173,7 @@ class TaskStore:
             "chain_id",
             "chain_name",
             "sequence",
+            "retry_attempt",
             "source_preset",
             "previous_task_id",
         }

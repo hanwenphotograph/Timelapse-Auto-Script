@@ -42,7 +42,12 @@ class TaskChainManager:
                     f"同一永久任务链已有活动任务: {other['id']}"
                 )
 
-    def create_successor(self, predecessor: dict[str, Any]) -> dict[str, Any]:
+    def create_successor(
+        self,
+        predecessor: dict[str, Any],
+        *,
+        retry: bool = False,
+    ) -> dict[str, Any]:
         metadata = self.metadata(predecessor)
         if not metadata or not metadata.get("enabled"):
             raise TaskError("当前任务未启用永久接力")
@@ -53,7 +58,10 @@ class TaskChainManager:
                     return task
             task_id = self._new_task_id()
             successor = create_successor_definition(
-                self.store.config, task_id, predecessor
+                self.store.config,
+                task_id,
+                predecessor,
+                retry=retry,
             )
             self.store.add_definition(successor)
             return successor

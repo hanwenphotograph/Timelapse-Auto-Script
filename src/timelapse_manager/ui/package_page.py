@@ -27,8 +27,15 @@ class PackagePage:
         self._closed = False
         self._busy = False
         self._statuses = manager.placeholders()
-        layout = build_package_layout(page, self._statuses, self.refresh, self.install)
+        layout = build_package_layout(
+            page,
+            self._statuses,
+            str(manager.dependency_root),
+            self.refresh,
+            self.install,
+        )
         self.summary = layout.summary
+        self.install_location = layout.install_location
         self.activity = layout.activity
         self.refresh_button = layout.refresh_button
         self.progress = layout.progress
@@ -57,7 +64,8 @@ class PackagePage:
     def install(self, identifier: str) -> None:
         if self._busy or self._closed:
             return
-        confirmation = self.manager.confirmation(identifier)
+        branch = self._rows[identifier].selected_branch
+        confirmation = self.manager.confirmation(identifier, branch)
         if not confirmation:
             messagebox.showinfo(
                 "需要手动安装",
@@ -82,7 +90,12 @@ class PackagePage:
 
         def work() -> None:
             try:
-                self.manager.install(identifier, output, progress)
+                self.manager.install(
+                    identifier,
+                    output,
+                    progress,
+                    branch=branch,
+                )
             except Exception as exc:
                 self._after(lambda error=exc: self._install_finished(label, error))
             else:

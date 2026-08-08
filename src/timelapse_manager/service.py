@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from timelapse_manager.config import ConfigManager, LoadedConfig
+from timelapse_manager.dependency_manager.runtime_dependencies import (
+    resolve_runtime_commands,
+)
 from timelapse_manager.errors import TaskError
 from timelapse_manager.io_utils import now_iso
 from timelapse_manager.paths import AppPaths
@@ -19,7 +22,6 @@ from timelapse_manager.process_utils import (
     detached_creation_flags,
     process_identity,
     process_matches,
-    resolve_command,
     terminate_tree,
 )
 from timelapse_manager.task_chain import TaskChainManager
@@ -82,13 +84,12 @@ class ManagerService:
         task = self.store.load(task_id, for_start=True)
         validate_task(task, for_start=True)
         commands = self.config.project["commands"]
-        camera = resolve_command(commands["camera"])
-        bracket: list[str] = []
-        if task["processing"].get("enabled", True):
-            bracket = resolve_command(
-                commands["bracketlapse"], commands.get("bracketlapse_fallback")
-            )
-        return task, camera, bracket
+        resolved = resolve_runtime_commands(
+            self.paths.root,
+            commands,
+            processing_enabled=bool(task["processing"].get("enabled", True)),
+        )
+        return task, list(resolved.camera), list(resolved.bracketlapse)
 
     def start_task(self, task_id: str) -> dict[str, Any]:
         task, _, _ = self.validate_task_start(task_id)

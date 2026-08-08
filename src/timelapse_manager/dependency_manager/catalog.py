@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from timelapse_manager.dependency_manager.models import DependencySpec
 
 
@@ -15,6 +17,7 @@ CATALOG = (
         True,
         "python:camera",
         "安装 / 更新",
+        selectable_branches=True,
     ),
     DependencySpec(
         "gphoto2",
@@ -34,6 +37,7 @@ CATALOG = (
         True,
         "python:bracketlapse",
         "安装 / 更新",
+        selectable_branches=True,
     ),
     DependencySpec(
         "enfuse",
@@ -54,6 +58,16 @@ CATALOG = (
         "system:ffmpeg",
     ),
     DependencySpec(
+        "simple_deflicker",
+        "后期组件",
+        "bracketlapse",
+        "Simple Deflicker",
+        "对 HDR 帧序列执行亮度去闪",
+        True,
+        "tool:simple-deflicker",
+        "安装 / 更新",
+    ),
+    DependencySpec(
         "align_image_stack",
         "后期组件",
         "bracketlapse",
@@ -71,6 +85,7 @@ CATALOG = (
         False,
         "python:sunsetscore",
         "安装 / 更新",
+        selectable_branches=True,
     ),
     DependencySpec(
         "sunset_runtime",
@@ -101,3 +116,13 @@ CATALOG = (
 )
 
 CATALOG_BY_ID = {item.identifier: item for item in CATALOG}
+
+
+def report_progress(
+    callback: Callable[[int, int, str], None] | None,
+    completed: int,
+    total: int,
+    identifier: str,
+) -> None:
+    if callback:
+        callback(completed, total, CATALOG_BY_ID[identifier].name)

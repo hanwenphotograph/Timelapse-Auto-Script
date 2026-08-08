@@ -40,9 +40,10 @@ class DependencyRow(ctk.CTkFrame):
     ) -> None:
         super().__init__(parent, fg_color="transparent", corner_radius=0, height=84)
         self.grid_propagate(False)
-        self.grid_columnconfigure(0, weight=4, minsize=245)
-        self.grid_columnconfigure(2, weight=5, minsize=280)
+        self.grid_columnconfigure(0, weight=4, minsize=220)
+        self.grid_columnconfigure(2, weight=5, minsize=230)
         self.spec = spec
+        self._branch_values: tuple[str, ...] = ()
 
         name_pad = (34, 10) if spec.parent_id else (16, 10)
         name_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -100,6 +101,24 @@ class DependencyRow(ctk.CTkFrame):
             wraplength=340,
         )
         self.metadata.grid(row=1, column=0, sticky="ew", pady=(3, 0))
+        self.branch_variable = ctk.StringVar(value="检测中")
+        self.branch_menu = ctk.CTkOptionMenu(
+            self,
+            variable=self.branch_variable,
+            values=["检测中"],
+            width=170,
+            height=32,
+            corner_radius=8,
+            fg_color=SURFACE_ALT,
+            button_color=BORDER,
+            button_hover_color=MUTED,
+            text_color=TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=10),
+            dropdown_font=ctk.CTkFont(family=FONT_FAMILY, size=10),
+            state="disabled",
+        )
+        if spec.selectable_branches:
+            self.branch_menu.grid(row=0, column=3, padx=(4, 2))
         self.button = ctk.CTkButton(
             self,
             text=spec.action_label if spec.action_id else "",
@@ -115,11 +134,18 @@ class DependencyRow(ctk.CTkFrame):
             font=ctk.CTkFont(family=FONT_FAMILY, size=11),
         )
         if spec.action_id:
-            self.button.grid(row=0, column=3, padx=(10, 16))
+            self.button.grid(row=0, column=4, padx=(8, 16))
 
         ctk.CTkFrame(self, height=1, fg_color=BORDER, corner_radius=0).grid(
-            row=1, column=0, columnspan=4, sticky="sew", padx=16
+            row=1, column=0, columnspan=5, sticky="sew", padx=16
         )
+
+    @property
+    def selected_branch(self) -> str | None:
+        if not self.spec.selectable_branches:
+            return None
+        value = self.branch_variable.get()
+        return value if value in self._branch_values else None
 
     def update_status(self, status: DependencyStatus, *, busy: bool) -> None:
         label, color, background = STATE_STYLE[status.state]
@@ -127,6 +153,7 @@ class DependencyRow(ctk.CTkFrame):
         self.detail.configure(text=status.detail)
         metadata = status.build_info.summary if status.build_info is not None else ""
         self.metadata.configure(text=metadata)
+        self._update_branch_menu(status, busy)
         if not self.spec.action_id:
             return
         enabled = status.action_available and not busy
@@ -141,3 +168,25 @@ class DependencyRow(ctk.CTkFrame):
             else:
                 text = "手动安装"
         self.button.configure(text=text, state="normal" if enabled else "disabled")
+
+    def _update_branch_menu(self, status: DependencyStatus, busy: bool) -> None:
+        if not self.spec.selectable_branches:
+            return
+        current = self.selected_branch
+        self._branch_values = status.available_branches
+        values = list(self._branch_values) or ["无可用分支"]
+        if current in self._branch_values:
+            selected = current
+        elif status.selected_branch in self._branch_values:
+            selected = status.selected_branch
+        else:
+            selected = values[0]
+        self.branch_menu.configure(
+            values=values,
+            state=(
+                "normal"
+                if status.action_available and not busy and self._branch_values
+                else "disabled"
+            ),
+        )
+        self.branch_variable.set(selected)

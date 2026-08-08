@@ -104,6 +104,7 @@ def materialize_scheduled(
             "chain_id": str(current.get("chain_id") or task_id),
             "chain_name": chain_name,
             "sequence": int(current.get("sequence", 1)),
+            "retry_attempt": int(current.get("retry_attempt", 0)),
             "source_preset": "scheduled_loop",
         }
         previous = current.get("previous_task_id")
@@ -162,11 +163,15 @@ def create_successor_definition(
     predecessor: dict[str, Any],
     *,
     now: datetime | None = None,
+    retry: bool = False,
 ) -> dict[str, Any]:
     continuation = deepcopy(predecessor["continuation"])
     continuation.update(
         {
             "sequence": int(continuation["sequence"]) + 1,
+            "retry_attempt": (
+                int(continuation.get("retry_attempt", 0)) + 1 if retry else 0
+            ),
             "previous_task_id": predecessor["id"],
         }
     )

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import shlex
-import shutil
 import signal
 import subprocess
 import sys
@@ -13,7 +12,9 @@ from typing import Sequence
 
 import psutil
 
+from timelapse_manager.dependency_manager.paths import DependencyPaths
 from timelapse_manager.errors import ProcessError
+from timelapse_manager.paths import application_root
 
 
 def process_identity(pid: int) -> float | None:
@@ -51,48 +52,63 @@ def split_command(value: str) -> list[str]:
     return parts
 
 
-def resolve_command(primary: str, fallback: str | None = None) -> list[str]:
+def resolve_command(
+    primary: str,
+    fallback: str | None = None,
+    *,
+    root: Path | None = None,
+) -> list[str]:
+    dependencies = DependencyPaths.discover(root or application_root())
     errors: list[str] = []
     for candidate in (primary, fallback):
         if not candidate:
             continue
         argv = split_command(candidate)
         executable = argv[0]
-        resolved: str | None
+        resolved: Path | None
         if Path(executable).expanduser().is_absolute() or any(
             sep in executable for sep in ("/", "\\")
         ):
             path = Path(executable).expanduser()
-            resolved = str(path.resolve()) if path.is_file() else None
+            resolved = path.resolve() if path.is_file() else None
+            if resolved is not None and not _allowed_executable(resolved, dependencies):
+                errors.append(f"{executable}（不在应用私有目录）")
+                continue
         else:
-            resolved = _environment_script(executable) or shutil.which(executable)
+            resolved = _managed_executable(executable, dependencies)
         if resolved:
-            argv[0] = resolved
+            argv[0] = str(resolved)
             return argv
         errors.append(executable)
-    raise ProcessError("找不到外部命令: " + " / ".join(errors))
+    raise ProcessError("找不到应用私有命令: " + " / ".join(errors))
 
 
-def _environment_script(name: str) -> str | None:
-    """Prefer scripts from the active Python or pipx-managed user directory."""
-    executable = Path(sys.executable).expanduser()
-    directories = [executable.parent]
-    resolved_directory = executable.resolve().parent
-    if resolved_directory != executable.parent:
-        directories.append(resolved_directory)
-    pipx_bin = os.environ.get("PIPX_BIN_DIR")
-    if pipx_bin:
-        directories.append(Path(pipx_bin).expanduser())
-    directories.append(Path.home() / ".local" / "bin")
+def _managed_executable(name: str, dependencies: DependencyPaths) -> Path | None:
     names = (name, f"{name}.exe") if os.name == "nt" else (name,)
-    for directory in directories:
+    for directory in dependencies.command_directories():
         for candidate_name in names:
             candidate = directory / candidate_name
             if candidate.is_file() and (
                 os.name == "nt" or os.access(candidate, os.X_OK)
             ):
-                return str(candidate.resolve())
+                resolved = candidate.resolve()
+                if dependencies.contains(resolved):
+                    return resolved
     return None
+
+
+def _allowed_executable(path: Path, dependencies: DependencyPaths) -> bool:
+    if dependencies.contains(path):
+        return True
+    try:
+        path.relative_to(dependencies.app_root)
+        return True
+    except ValueError:
+        pass
+    try:
+        return path == Path(sys.executable).resolve()
+    except OSError:
+        return False
 
 
 def child_creation_flags() -> int:

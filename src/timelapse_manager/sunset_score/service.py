@@ -41,7 +41,11 @@ class SunsetScoreService:
         self.runtime = runtime
         self.interval = interval
         if processing_enabled:
-            self.availability = detect_sunset_score(command_value)
+            self.availability = detect_sunset_score(
+                command_value,
+                root=runtime.paths.root,
+                env=runtime.dependency_paths.runtime_environment(),
+            )
         else:
             self.availability = SunsetScoreAvailability(reason="任务未启用后期处理")
         self._session_lock = threading.Lock()

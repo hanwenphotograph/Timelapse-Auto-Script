@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 from timelapse_manager.process_utils import resolve_command
@@ -37,9 +39,11 @@ def detect_sunset_score(
     *,
     timeout: float = 10,
     run: RunCommand = subprocess.run,
+    root: Path | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> SunsetScoreAvailability:
     try:
-        command = resolve_command(command_value)
+        command = resolve_command(command_value, root=root)
     except Exception as exc:
         return SunsetScoreAvailability(reason=f"未找到命令：{exc}")
 
@@ -52,6 +56,7 @@ def detect_sunset_score(
             errors="replace",
             timeout=timeout,
             check=False,
+            env=dict(env) if env is not None else None,
         )
     except subprocess.TimeoutExpired:
         return SunsetScoreAvailability(

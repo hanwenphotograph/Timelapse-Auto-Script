@@ -22,6 +22,7 @@ from timelapse_manager.ui.theme import (
 @dataclass(frozen=True)
 class PackageLayout:
     summary: ctk.CTkLabel
+    install_location: ctk.CTkLabel
     activity: ctk.CTkLabel
     refresh_button: ctk.CTkButton
     progress: ctk.CTkProgressBar
@@ -32,6 +33,7 @@ class PackageLayout:
 def build_package_layout(
     page: ctk.CTkFrame,
     statuses: list[DependencyStatus],
+    dependency_root: str,
     refresh: Callable[[], None],
     install: Callable[[str], None],
 ) -> PackageLayout:
@@ -54,6 +56,16 @@ def build_package_layout(
         anchor="w",
     )
     summary.grid(row=0, column=0, padx=(16, 18), pady=(11, 2), sticky="w")
+    install_location = ctk.CTkLabel(
+        toolbar,
+        text=f"私有安装目录：{dependency_root}",
+        text_color=MUTED,
+        font=ctk.CTkFont(family=FONT_FAMILY, size=10),
+        anchor="w",
+        justify="left",
+        wraplength=620,
+    )
+    install_location.grid(row=1, column=0, columnspan=2, padx=16, sticky="ew")
     activity = ctk.CTkLabel(
         toolbar,
         text="",
@@ -72,10 +84,10 @@ def build_package_layout(
         fg_color=ACCENT,
         font=ctk.CTkFont(family=FONT_FAMILY, size=11),
     )
-    refresh_button.grid(row=0, column=3, rowspan=2, padx=14, pady=10)
+    refresh_button.grid(row=0, column=3, rowspan=3, padx=14, pady=10)
     progress = ctk.CTkProgressBar(toolbar, height=4, mode="determinate")
     progress.grid(
-        row=1, column=0, columnspan=2, sticky="ew", padx=(16, 8), pady=(5, 10)
+        row=2, column=0, columnspan=2, sticky="ew", padx=(16, 8), pady=(5, 10)
     )
     progress.set(0)
     progress_value = ctk.CTkLabel(
@@ -86,10 +98,11 @@ def build_package_layout(
         font=ctk.CTkFont(family=FONT_FAMILY, size=10, weight="bold"),
         anchor="e",
     )
-    progress_value.grid(row=1, column=2, padx=(0, 6), pady=(2, 7), sticky="e")
+    progress_value.grid(row=2, column=2, padx=(0, 6), pady=(2, 7), sticky="e")
     rows = _build_dependency_list(page, statuses, install)
     return PackageLayout(
         summary,
+        install_location,
         activity,
         refresh_button,
         progress,

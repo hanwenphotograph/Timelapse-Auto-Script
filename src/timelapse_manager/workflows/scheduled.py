@@ -8,6 +8,7 @@ from datetime import datetime
 from timelapse_manager.errors import ConfigError, TaskError
 from timelapse_manager.runtime import HardStopRequested, TaskRuntime
 from timelapse_manager.workflows.scheduled_support import (
+    CaptureProgress,
     ScheduledFinisher,
     WorkSpec,
     bracket_output_handler,
@@ -52,6 +53,8 @@ class ScheduledWorkflow:
 
     def _run_once(self, spec: WorkSpec) -> bool:
         spec.work_dir.mkdir(parents=True, exist_ok=True)
+        preserve_names = frozenset(entry.name for entry in spec.work_dir.iterdir())
+        capture_progress = CaptureProgress()
         interval = self.task["capture"].get("interval_seconds")
         if interval is None:
             interval = self.project["capture_interval_seconds"]
@@ -100,7 +103,13 @@ class ScheduledWorkflow:
                 code = standby.poll()
                 if code is not None:
                     self.runtime.log(f"Bracketlapse standby 启动失败，退出码={code}")
-                    return self.finisher.finish(spec, False, score_session)
+                    return self.finisher.finish(
+                        spec,
+                        False,
+                        score_session,
+                        capture_started=False,
+                        preserve_names=preserve_names,
+                    )
                 time.sleep(self.runtime.poll_interval)
 
         camera_argv = self.runtime.camera_command + [
@@ -121,7 +130,7 @@ class ScheduledWorkflow:
             camera_argv,
             cwd=spec.work_dir,
             extra_env={"PYTHONUNBUFFERED": "1"},
-            on_line=camera_output_handler(self.runtime, spec),
+            on_line=camera_output_handler(self.runtime, spec, capture_progress),
         )
         self.runtime.notify_async(
             "camera_process_started", f"camera-timelapse 已启动，目录 {spec.work_dir}"
@@ -169,4 +178,10 @@ class ScheduledWorkflow:
             self.runtime.set_phase("等待后期处理", str(spec.work_dir))
             code = self.runtime.wait_child(standby)
             success = code == 0
-        return self.finisher.finish(spec, success, score_session)
+        return self.finisher.finish(
+            spec,
+            success,
+            score_session,
+            capture_started=capture_progress.started,
+            preserve_names=preserve_names,
+        )

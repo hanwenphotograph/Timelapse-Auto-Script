@@ -26,7 +26,9 @@ Closing the GUI does not stop background tasks. Reopen it at any time to inspect
 - Camera Timelapse Controller for real capture.
 - Bracketlapse 0.2.0 or newer when post-processing is enabled.
 
-The GUI can start before the external workflow tools are installed. Use **包管理 (Package Management)** after startup to inspect or install supported dependencies. For owned CLI dependencies that expose public build metadata, the page also shows the installed version, source branch, and UTC build time.
+The GUI can start before the external workflow tools are installed. Use **包管理 (Package Management)** after startup to inspect or install supported dependencies. Every workflow dependency is downloaded to `.timelapse/dependencies/` inside the application directory and executed from that private tree. The manager never falls back to commands from the global `PATH`, Homebrew, `pipx`, or user package directories; only basic operating-system utilities remain visible to child processes.
+
+The package page displays the private installation path. For owned CLI dependencies that expose public build metadata, it also shows the installed version, source branch, and UTC build time. Camera Timelapse Controller, Bracketlapse, and SunsetScore updates provide a remote-branch menu; their primary defaults are `main`, `master`, and `main`, respectively.
 
 ### Download
 
@@ -111,7 +113,7 @@ Use **测试文本和图片 (Test Text and Image)** to validate and save the edi
 
 ### SunsetScore
 
-SunsetScore 0.10.0 or newer can sample processed photos and detect sunset glow. Positive results retain `hdr_enfuse`; negative results remove it; analysis failures preserve the photos and fail the task safely. Install or prepare it from **包管理 (Package Management)**, or install the CLI separately with `pipx`.
+SunsetScore 0.10.0 or newer can sample processed photos and detect sunset glow. Positive results retain `hdr_enfuse`; negative results remove it; analysis failures preserve the photos and fail the task safely. Install the CLI and prepare its resources from **包管理 (Package Management)**. Its Python package, inference runtime, models, and cache all stay under `.timelapse/dependencies/`.
 
 Capture and post-processing use the public dependency protocols. Bracketlapse 0.2.0 or newer stays in one standby process and fuses each complete group as soon as it is ready, emitting an `hdr_ready` event. The manager forwards those events to one SunsetScore 0.10.0 or newer JSONL service, which owns directory scanning, sampling, aggregation, score-file writing, and one task-scoped model reused across all frames and eternal batches. Deflicker and video export finish after HDR production, while scoring can continue in parallel. The manager does not inspect either dependency's internal Python environment or implementation.
 
@@ -132,16 +134,17 @@ The GUI creates `config/auto_timelapse.yaml` and `config/webhook.yaml` automatic
 | `disk_space_warning_threshold_gb` | Free-space warning threshold; `0` disables it. |
 | `morning.start_at` / `morning.end_at` | Morning scheduling window. |
 | `dusk.start_at` / `dusk.end_at` | Dusk scheduling window. |
-| `commands.camera` | Camera Timelapse Controller command or absolute path. |
-| `commands.bracketlapse` | Primary Bracketlapse command. |
-| `commands.bracketlapse_fallback` | Fallback spelling or path for Bracketlapse. |
-| `commands.sunsetscore` | SunsetScore command or absolute path. |
+| `commands.camera` | Camera Timelapse Controller private command name or application-local path. |
+| `commands.bracketlapse` | Primary private Bracketlapse command. |
+| `commands.bracketlapse_fallback` | Private fallback spelling or application-local path for Bracketlapse. |
+| `commands.sunsetscore` | SunsetScore private command name or application-local path. |
 | `sunset_score.interval` | Score every Nth processed photo. |
 | `runtime.state_dir` / `runtime.tasks_dir` | Runtime state and task-definition locations. |
 | `runtime.poll_interval_seconds` | Worker control polling interval. |
 | `runtime.startup_probe_seconds` | Time allowed for a new worker to report startup. |
 | `runtime.stop_timeout_seconds` | Graceful stop timeout before forced termination. |
 | `runtime.retry_delay_seconds` | Delay before a failed recurring task retries. |
+| `runtime.max_retry_attempts` | Maximum consecutive retries before a recurring chain stops. |
 | `runtime.task_history_retention_days` | Retention for completed recurring-task history. |
 | `eternal.batch_groups` | Complete exposure groups per continuous batch. |
 | `eternal.images_per_group` | Expected exposures in each group. |
@@ -160,6 +163,7 @@ The GUI creates `config/auto_timelapse.yaml` and `config/webhook.yaml` automatic
 
 - Task definitions are stored in `config/tasks/`.
 - Runtime state and logs are stored in `.timelapse/tasks/`.
+- Workflow executables, Python, Homebrew bottles, caches, and SunsetScore resources are stored in `.timelapse/dependencies/`.
 - Deleting task metadata does not delete captured photos or videos.
 - Cleanup rules can remove unreserved content from a task working directory, and SunsetScore can remove `hdr_enfuse`; test a workflow with sample material first.
 

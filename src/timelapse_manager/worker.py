@@ -72,7 +72,7 @@ def run_worker(task_id: str, root: Path | None = None, *, console: bool = False)
         runtime.finish(status, phase, code, message)
         if handoff:
             try:
-                launch_successor(runtime)
+                launch_successor(runtime, handoff)
             except Exception as exc:
                 runtime.log(f"创建或启动后继任务失败: {exc}")
     finally:

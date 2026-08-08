@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 from timelapse_manager.sunset_score.availability import (
@@ -35,17 +37,23 @@ def inspect_sunset_resources(
     value: str | SunsetScoreAvailability,
     *,
     run: RunCommand = subprocess.run,
+    root: Path | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> dict[str, tuple[str, str]]:
-    return query_sunset_resources(value, run=run).statuses
+    return query_sunset_resources(value, run=run, root=root, env=env).statuses
 
 
 def query_sunset_resources(
     value: str | SunsetScoreAvailability,
     *,
     run: RunCommand = subprocess.run,
+    root: Path | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> SunsetResourceSnapshot:
     availability = (
-        value if isinstance(value, SunsetScoreAvailability) else detect_sunset_score(value)
+        value
+        if isinstance(value, SunsetScoreAvailability)
+        else detect_sunset_score(value, root=root, env=env)
     )
     if not availability.enabled:
         state = "issue" if availability.command else "missing"
@@ -59,6 +67,7 @@ def query_sunset_resources(
             errors="replace",
             timeout=15,
             check=False,
+            env=dict(env) if env is not None else None,
         )
     except subprocess.TimeoutExpired:
         return _failed_snapshot(

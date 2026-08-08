@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from timelapse_manager.bracketlapse import detect_bracketlapse
+from timelapse_manager.dependency_manager.health import probe_command
+from timelapse_manager.dependency_manager.paths import DependencyPaths
 from timelapse_manager.io_utils import load_yaml, save_yaml
 from timelapse_manager.process_utils import resolve_command
 from timelapse_manager.service import ManagerService
@@ -42,11 +44,16 @@ def run_self_test(service: ManagerService, *, full: bool = False) -> list[CheckR
     check("任务配置", lambda: _check_tasks(service))
 
     commands = service.config.project["commands"]
+    dependency_paths = DependencyPaths.discover(service.paths.root)
+    dependency_environment = dependency_paths.runtime_environment()
     command_checks = (("camera-timelapse", commands["camera"], None),)
     for name, primary, fallback in command_checks:
         try:
-            resolved = resolve_command(primary, fallback)
-            results.append(CheckResult("PASS", f"外部命令 {name}", resolved[0]))
+            resolved = resolve_command(primary, fallback, root=service.paths.root)
+            probe = probe_command(resolved, env=dependency_environment)
+            if not probe.ready:
+                raise RuntimeError(probe.detail)
+            results.append(CheckResult("PASS", f"私有命令 {name}", resolved[0]))
         except Exception as exc:
             results.append(
                 CheckResult("FAIL" if full else "WARN", f"外部命令 {name}", str(exc))
@@ -54,6 +61,8 @@ def run_self_test(service: ManagerService, *, full: bool = False) -> list[CheckR
     bracket = detect_bracketlapse(
         str(commands["bracketlapse"]),
         str(commands.get("bracketlapse_fallback") or "") or None,
+        root=service.paths.root,
+        env=dependency_environment,
     )
     if bracket.enabled:
         results.append(
@@ -65,7 +74,11 @@ def run_self_test(service: ManagerService, *, full: bool = False) -> list[CheckR
         )
     else:
         results.append(CheckResult("FAIL" if full else "WARN", "外部命令 Bracketlapse", bracket.reason))
-    sunset = detect_sunset_score(str(commands["sunsetscore"]))
+    sunset = detect_sunset_score(
+        str(commands["sunsetscore"]),
+        root=service.paths.root,
+        env=dependency_environment,
+    )
     if sunset.enabled:
         results.append(
             CheckResult(

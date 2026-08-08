@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from timelapse_manager.dependency_manager.paths import DependencyPaths
+from timelapse_manager.paths import AppPaths
 from timelapse_manager.sunset_score.cache import (
     CacheMismatchError,
     validate_score_inventory,
@@ -64,6 +66,8 @@ class CacheRuntime:
     def __init__(self):
         self.webhook = FakeWebhook()
         self.logs: list[str] = []
+        self.paths = AppPaths.discover(REPOSITORY)
+        self.dependency_paths = DependencyPaths.discover(REPOSITORY)
 
     def log(self, message: str) -> None:
         self.logs.append(message)

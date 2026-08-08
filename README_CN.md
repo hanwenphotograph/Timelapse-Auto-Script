@@ -26,7 +26,9 @@ Timelapse Manager 是一个跨平台的延时摄影任务管理器，同时提�
 - 实际拍摄需要 Camera Timelapse Controller。
 - 开启后期处理时需要 Bracketlapse 0.2.0 或更高版本。
 
-即使尚未安装外部工作流工具，GUI 也可以正常启动。启动后可通过“包管理”检查或安装受支持的依赖。对于提供公开构建信息接口的自有 CLI 依赖，该页面还会显示当前安装版本、源码分支和 UTC 构建时间。
+即使尚未安装外部工作流工具，GUI 也可以正常启动。启动后可通过“包管理”检查或安装受支持的依赖。所有工作流依赖均下载至应用目录内的 `.timelapse/dependencies/`，并从这棵私有目录运行。Manager 不会回退使用全局 `PATH`、Homebrew、`pipx` 或用户包目录中的命令，子进程只能额外访问操作系统基础工具。
+
+包管理页面会显示私有安装目录。对于提供公开构建信息接口的自有 CLI 依赖，该页面还会显示当前安装版本、源码分支和 UTC 构建时间。Camera Timelapse Controller、Bracketlapse 和 SunsetScore 更新操作可以选择远端分支，默认分别使用 `main`、`master` 和 `main`。
 
 ### 下载
 
@@ -111,7 +113,7 @@ image_body: '{"msgtype":"image","image":{"base64":"__IMGBASE64__","md5":"__IMGMD
 
 ### SunsetScore
 
-SunsetScore 0.10.0 或更高版本可以抽样分析处理后的照片并识别晚霞。检测到晚霞时保留 `hdr_enfuse`，未检测到时删除该目录；分析失败时保留照片并让任务安全失败。可以从“包管理”安装或准备依赖，也可以单独使用 `pipx` 安装 CLI。
+SunsetScore 0.10.0 或更高版本可以抽样分析处理后的照片并识别晚霞。检测到晚霞时保留 `hdr_enfuse`，未检测到时删除该目录；分析失败时保留照片并让任务安全失败。请从“包管理”安装 CLI 并准备资源，其 Python 包、推理运行时、模型与缓存都会保存在 `.timelapse/dependencies/` 内。
 
 拍摄和后期处理采用依赖公开协议。Bracketlapse 0.2.0 或更高版本会保持一个 standby 进程，在每个完整曝光组就绪后立即融合并发出 `hdr_ready` 事件。Manager 将事件转发给 SunsetScore 0.10.0 或更高版本的 JSONL 常驻服务，由该服务负责目录扫描、采样、聚合和评分文件写入，并在同一任务的所有帧及永续批次中复用一个模型。HDR 生产完成后再收尾去闪和视频导出，评分可以并行继续。Manager 不会探测两个依赖的内部 Python 环境，也不会复制其内部实现。
 
@@ -132,16 +134,17 @@ GUI 会自动创建 `config/auto_timelapse.yaml` 和 `config/webhook.yaml`，同
 | `disk_space_warning_threshold_gb` | 剩余空间告警阈值，`0` 表示关闭。 |
 | `morning.start_at` / `morning.end_at` | 清晨定时时段。 |
 | `dusk.start_at` / `dusk.end_at` | 黄昏定时时段。 |
-| `commands.camera` | Camera Timelapse Controller 命令或绝对路径。 |
-| `commands.bracketlapse` | Bracketlapse 主命令。 |
-| `commands.bracketlapse_fallback` | Bracketlapse 备用名称或路径。 |
-| `commands.sunsetscore` | SunsetScore 命令或绝对路径。 |
+| `commands.camera` | Camera Timelapse Controller 私有命令名或应用内路径。 |
+| `commands.bracketlapse` | Bracketlapse 私有主命令。 |
+| `commands.bracketlapse_fallback` | Bracketlapse 私有备用名称或应用内路径。 |
+| `commands.sunsetscore` | SunsetScore 私有命令名或应用内路径。 |
 | `sunset_score.interval` | 每隔多少张处理后照片进行一次评分。 |
 | `runtime.state_dir` / `runtime.tasks_dir` | 运行状态与任务定义目录。 |
 | `runtime.poll_interval_seconds` | worker 检查控制指令的间隔。 |
 | `runtime.startup_probe_seconds` | 新 worker 报告启动状态的等待时间。 |
 | `runtime.stop_timeout_seconds` | 强制终止前等待正常停止的时间。 |
 | `runtime.retry_delay_seconds` | 循环任务失败后的重试延迟。 |
+| `runtime.max_retry_attempts` | 循环任务链停止前允许的最大连续重试次数。 |
 | `runtime.task_history_retention_days` | 已完成循环任务历史的保留天数。 |
 | `eternal.batch_groups` | 每个持续任务批次包含的完整曝光组数量。 |
 | `eternal.images_per_group` | 每个曝光组预期包含的照片数量。 |
@@ -160,6 +163,7 @@ GUI 会自动创建 `config/auto_timelapse.yaml` 和 `config/webhook.yaml`，同
 
 - 任务定义保存在 `config/tasks/`。
 - 运行状态和日志保存在 `.timelapse/tasks/`。
+- 工作流可执行文件、Python、Homebrew bottle、缓存及 SunsetScore 资源保存在 `.timelapse/dependencies/`。
 - 删除任务元数据不会删除已拍摄的照片或视频。
 - 清理策略可能删除任务工作目录中未保留的内容，SunsetScore 也可能删除 `hdr_enfuse`，请先用少量样例素材验证流程。
 

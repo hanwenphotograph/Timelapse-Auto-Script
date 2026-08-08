@@ -1,22 +1,15 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from timelapse_manager.bracketlapse import BracketlapseAvailability
 from timelapse_manager.dependency_manager.inspection import DependencyInspector
-from timelapse_manager.dependency_manager.installation import (
-    PACKAGE_URLS,
-    DependencyInstaller,
-    InstallPlan,
-)
+from timelapse_manager.dependency_manager.health import CommandProbe
 from timelapse_manager.dependency_manager.models import DependencyBuildInfo
-from timelapse_manager.dependency_manager.progress import InstallProgressTracker
 from timelapse_manager.dependency_manager.sunset_resources import (
-    SunsetResourceSnapshot,
     inspect_sunset_resources,
 )
 from timelapse_manager.sunset_score.availability import SunsetScoreAvailability
@@ -72,7 +65,13 @@ class DependencyInspectionTests(unittest.TestCase):
         with (
             patch(
                 "timelapse_manager.dependency_manager.inspection.resolve_command",
-                side_effect=lambda primary, fallback=None: [f"/tools/{primary}"],
+                side_effect=lambda primary, fallback=None, **_kwargs: [
+                    f"/tools/{primary}"
+                ],
+            ),
+            patch(
+                "timelapse_manager.dependency_manager.inspection.probe_command",
+                return_value=CommandProbe(True, "ok"),
             ),
             patch(
                 "timelapse_manager.dependency_manager.inspection.detect_sunset_score",
@@ -88,16 +87,33 @@ class DependencyInspectionTests(unittest.TestCase):
             ),
             patch(
                 "timelapse_manager.dependency_manager.inspection.inspect_build_info",
-                side_effect=lambda command: DependencyBuildInfo(
+                side_effect=lambda command, **_kwargs: DependencyBuildInfo(
                     "0.10.0" if "sunsetscore" in command[0] else "0.2.0",
-                    "main",
+                    "dev_deflick" if "bracketlapse" in command[0] else "main",
                     "2026-08-08T12:30:00Z",
                     "abc123",
                 ),
             ),
+            patch(
+                "timelapse_manager.dependency_manager.inspection.matching_build_info",
+                side_effect=lambda command, version, **_kwargs: DependencyBuildInfo(
+                    version,
+                    "dev_deflick" if "bracketlapse" in command[0] else "main",
+                    "2026-08-08T12:30:00Z",
+                    "abc123",
+                ),
+            ),
+            patch(
+                "timelapse_manager.dependency_manager.inspection.inspect_remote_branches",
+                side_effect=lambda identifier: {
+                    "camera": ("main", "dev"),
+                    "bracketlapse": ("master", "dev_deflick"),
+                    "sunsetscore": ("main", "opt/gpu-throughput"),
+                }[identifier],
+            ),
         ):
             progress = []
-            statuses = DependencyInspector().inspect(
+            statuses = DependencyInspector(Path.cwd()).inspect(
                 {},
                 lambda completed, total, name: progress.append(
                     (completed, total, name)
@@ -106,76 +122,32 @@ class DependencyInspectionTests(unittest.TestCase):
 
         self.assertEqual(statuses[0].spec.identifier, "camera")
         self.assertEqual(statuses[1].spec.parent_id, "camera")
-        self.assertEqual(statuses[6].state, "ready")
-        self.assertEqual(statuses[7].spec.parent_id, "sunsetscore")
-        self.assertEqual(statuses[8].state, "ready")
-        self.assertEqual(statuses[2].build_info.branch, "main")
-        self.assertEqual(statuses[6].build_info.build_time, "2026-08-08T12:30:00Z")
-        self.assertEqual([item[0] for item in progress], list(range(1, 11)))
-        self.assertTrue(all(item[1] == 10 for item in progress))
+        self.assertEqual(statuses[7].state, "ready")
+        self.assertEqual(statuses[8].spec.parent_id, "sunsetscore")
+        self.assertEqual(statuses[9].state, "ready")
+        self.assertEqual(statuses[2].build_info.branch, "dev_deflick")
+        self.assertEqual(statuses[2].available_branches, ("master", "dev_deflick"))
+        self.assertEqual(statuses[2].selected_branch, "master")
+        self.assertEqual(statuses[7].build_info.build_time, "2026-08-08T12:30:00Z")
+        self.assertEqual([item[0] for item in progress], list(range(1, 12)))
+        self.assertTrue(all(item[1] == 11 for item in progress))
 
-
-class InstallProgressTests(unittest.TestCase):
-    def test_generic_installer_percentage_is_reported(self) -> None:
-        tracker = InstallProgressTracker()
-
-        self.assertEqual(tracker.consume("Receiving objects: 42%"), 0.42)
-
-    def test_sunset_downloads_are_weighted_by_artifact_size(self) -> None:
-        megabyte = 1024**2
-        tracker = InstallProgressTracker(
-            (("model.gguf", 100 * megabyte), ("projector.gguf", 50 * megabyte))
-        )
-
-        tracker.consume("开始下载 runtime.zip（50.0 MB）")
-        self.assertAlmostEqual(tracker.consume("下载进度 runtime.zip：50%"), 0.125)
-        self.assertAlmostEqual(tracker.consume("下载完成：runtime.zip"), 0.25)
-        self.assertAlmostEqual(tracker.consume("下载进度 model.gguf：50%"), 0.5)
-        tracker.consume("正在校验：model.gguf")
-        self.assertAlmostEqual(tracker.consume("下载完成：projector.gguf"), 1.0)
-
-    def test_installer_forwards_parsed_progress_and_completion(self) -> None:
-        installer = DependencyInstaller(Path.cwd())
-        plan = InstallPlan(
-            (sys.executable, "-c", "print('Downloading: 25%')"),
-            "test",
-        )
-        values = []
-
-        installer.execute(plan, on_progress=values.append)
-
-        self.assertEqual(values, [0.25, 1.0])
-
-
-class DependencyInstallationTests(unittest.TestCase):
-    def test_source_install_uses_the_active_python_environment(self) -> None:
-        installer = DependencyInstaller(Path.cwd())
-        with patch.object(sys, "frozen", False, create=True):
-            plan = installer.plan("python:sunsetscore", {})
-
-        assert plan is not None
-        self.assertEqual(plan.command[:4], (sys.executable, "-m", "pip", "install"))
-        self.assertEqual(plan.command[-1], PACKAGE_URLS["sunsetscore"])
-
-    def test_sunset_prepare_uses_public_cli(self) -> None:
-        snapshot = SunsetResourceSnapshot(
-            ("/tools/sunsetscore",),
-            {},
-            (("model.gguf", 100), ("projector.gguf", 50)),
-        )
-        installer = DependencyInstaller(Path.cwd())
-        with patch(
-            "timelapse_manager.dependency_manager.installation.query_sunset_resources",
-            return_value=snapshot,
+    def test_broken_native_command_is_reported_as_an_issue(self) -> None:
+        inspector = DependencyInspector(Path.cwd())
+        with (
+            patch(
+                "timelapse_manager.dependency_manager.inspection.resolve_command",
+                return_value=["/private/enfuse"],
+            ),
+            patch(
+                "timelapse_manager.dependency_manager.inspection.probe_command",
+                return_value=CommandProbe(False, "健康检查退出码 9"),
+            ),
         ):
-            plan = installer.plan("sunset:prepare", {"sunsetscore": "sunsetscore"})
+            state, detail, _build = inspector._command("enfuse")
 
-        assert plan is not None
-        self.assertEqual(
-            plan.command,
-            ("/tools/sunsetscore", "runtime", "prepare"),
-        )
-        self.assertEqual(plan.progress_sizes, snapshot.artifacts)
+        self.assertEqual(state, "issue")
+        self.assertIn("健康检查退出码 9", detail)
 
 
 if __name__ == "__main__":

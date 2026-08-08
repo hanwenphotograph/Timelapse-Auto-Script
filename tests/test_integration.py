@@ -11,6 +11,7 @@ from timelapse_manager.io_utils import load_yaml, save_yaml, yaml_text
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.service import ManagerService
 from timelapse_manager.task_store import ACTIVE_STATUSES
+from tests.managed_dependency_support import install_fake_native_tools
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -26,6 +27,7 @@ class IntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        install_fake_native_tools(self.root)
         paths = AppPaths.discover(self.root)
         manager = ConfigManager(paths)
         manager.ensure()
@@ -96,6 +98,48 @@ class IntegrationTests(unittest.TestCase):
         self.assertFalse(
             list((self.root / "output" / ".eternal" / "queue").glob("*.ready.yaml"))
         )
+
+    def test_failure_before_capture_does_not_clean_work_directory(self) -> None:
+        task = self.service.create_task("拍摄前失败", "scheduled_once")
+        definition = self.service.store.load(task["id"])
+        definition["processing"]["enabled"] = False
+        definition["cleanup"].update({"enabled": True, "on_failure": True})
+        definition["environment"] = {
+            "FAKE_CAMERA_FAIL_BEFORE_CAPTURE": "1",
+            "FAKE_CAMERA_EXIT_CODE": "7",
+        }
+        self.service.store.save_text(task["id"], yaml_text(definition))
+
+        self.service.start_task(task["id"])
+        state = self.wait_terminal(task["id"])
+        work_dir = Path(definition["capture"]["work_dir"])
+        log = self.service.store.log_path(task["id"]).read_text(encoding="utf-8")
+
+        self.assertEqual(state["status"], "failed", state)
+        self.assertTrue((work_dir / "pre-capture.tmp").is_file())
+        self.assertIn("拍摄尚未开始，跳过失败清理", log)
+
+    def test_failure_cleanup_preserves_preexisting_top_level_content(self) -> None:
+        task = self.service.create_task("保护既有内容", "scheduled_once")
+        definition = self.service.store.load(task["id"])
+        definition["processing"]["enabled"] = False
+        definition["cleanup"].update({"enabled": True, "on_failure": True})
+        definition["environment"] = {
+            "FAKE_CAMERA_ROUNDS": "1",
+            "FAKE_CAMERA_EXIT_CODE": "7",
+        }
+        work_dir = Path(definition["capture"]["work_dir"])
+        work_dir.mkdir(parents=True)
+        existing = work_dir / "existing.txt"
+        existing.write_text("keep", encoding="utf-8")
+        self.service.store.save_text(task["id"], yaml_text(definition))
+
+        self.service.start_task(task["id"])
+        state = self.wait_terminal(task["id"])
+
+        self.assertEqual(state["status"], "failed", state)
+        self.assertEqual(existing.read_text(encoding="utf-8"), "keep")
+        self.assertFalse((work_dir / "0001_0.jpg").exists())
 
 
 if __name__ == "__main__":
