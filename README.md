@@ -26,7 +26,7 @@ Closing the GUI does not stop background tasks. Reopen it at any time to inspect
 - Camera Timelapse Controller for real capture.
 - Bracketlapse 0.2.0 or newer when post-processing is enabled.
 
-The GUI can start before the external workflow tools are installed. Use **包管理 (Package Management)** after startup to inspect or install supported dependencies.
+The GUI can start before the external workflow tools are installed. Use **包管理 (Package Management)** after startup to inspect or install supported dependencies. For owned CLI dependencies that expose public build metadata, the page also shows the installed version, source branch, and UTC build time.
 
 ### Download
 

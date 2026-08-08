@@ -6,8 +6,12 @@ from collections.abc import Callable
 from typing import Any
 
 from timelapse_manager.bracketlapse import detect_bracketlapse
+from timelapse_manager.dependency_manager.build_info import inspect_build_info
 from timelapse_manager.dependency_manager.catalog import CATALOG, CATALOG_BY_ID
-from timelapse_manager.dependency_manager.models import DependencyStatus
+from timelapse_manager.dependency_manager.models import (
+    DependencyBuildInfo,
+    DependencyStatus,
+)
 from timelapse_manager.dependency_manager.sunset_resources import (
     inspect_sunset_resources,
 )
@@ -30,7 +34,7 @@ class DependencyInspector:
         sunset = str(commands.get("sunsetscore", "sunsetscore"))
         sunset_availability = detect_sunset_score(sunset)
         checks = (
-            ("camera", lambda: self._command(camera)),
+            ("camera", lambda: self._owned_command(camera)),
             ("gphoto2", lambda: self._command("gphoto2")),
             (
                 "bracketlapse",
@@ -41,46 +45,79 @@ class DependencyInspector:
             ("align_image_stack", lambda: self._command("align_image_stack")),
             ("sunsetscore", lambda: self._sunset_score(sunset_availability)),
         )
-        raw: dict[str, tuple[str, str]] = {}
+        raw: dict[str, tuple[str, str, DependencyBuildInfo | None]] = {}
         total = len(CATALOG)
         for completed, (identifier, operation) in enumerate(checks, start=1):
             raw[identifier] = operation()
             _report(on_progress, completed, total, identifier)
         resources = inspect_sunset_resources(sunset_availability)
         for completed, identifier in enumerate(resources, start=len(checks) + 1):
-            raw[identifier] = resources[identifier]
+            state, detail = resources[identifier]
+            raw[identifier] = state, detail, None
             _report(on_progress, completed, total, identifier)
         return [
-            DependencyStatus(spec, raw[spec.identifier][0], raw[spec.identifier][1])
+            DependencyStatus(
+                spec,
+                raw[spec.identifier][0],
+                raw[spec.identifier][1],
+                raw[spec.identifier][2],
+            )
             for spec in CATALOG
         ]
 
     @staticmethod
-    def _command(primary: str, fallback: str | None = None) -> tuple[str, str]:
+    def _command(
+        primary: str, fallback: str | None = None
+    ) -> tuple[str, str, None]:
         try:
             command = resolve_command(primary, fallback)
         except Exception as exc:
-            return "missing", str(exc)
-        return "ready", command[0]
+            return "missing", str(exc), None
+        return "ready", command[0], None
 
     @staticmethod
-    def _sunset_score(result: SunsetScoreAvailability) -> tuple[str, str]:
+    def _owned_command(primary: str) -> tuple[str, str, DependencyBuildInfo | None]:
+        try:
+            command = resolve_command(primary)
+        except Exception as exc:
+            return "missing", str(exc), None
+        return "ready", command[0], inspect_build_info(command)
+
+    @staticmethod
+    def _sunset_score(
+        result: SunsetScoreAvailability,
+    ) -> tuple[str, str, DependencyBuildInfo | None]:
         if result.enabled:
-            return "ready", f"版本 {result.version} · {result.command[0]}"
+            build_info = _matching_build_info(result.command, result.version)
+            return "ready", result.command[0], build_info
         if result.command:
             state = "outdated" if "低于最低要求" in result.reason else "issue"
-            return state, result.reason
-        return "missing", result.reason
+            return state, result.reason, None
+        return "missing", result.reason, None
 
     @staticmethod
-    def _bracketlapse(primary: str, fallback: str) -> tuple[str, str]:
+    def _bracketlapse(
+        primary: str, fallback: str
+    ) -> tuple[str, str, DependencyBuildInfo | None]:
         result = detect_bracketlapse(primary, fallback or None)
         if result.enabled:
-            return "ready", f"版本 {result.version} · {result.command[0]}"
+            build_info = _matching_build_info(result.command, result.version)
+            return "ready", result.command[0], build_info
         if result.command:
             state = "outdated" if "低于最低要求" in result.reason else "issue"
-            return state, result.reason
-        return "missing", result.reason
+            return state, result.reason, None
+        return "missing", result.reason, None
+
+
+def _matching_build_info(
+    command: tuple[str, ...], version: str | None
+) -> DependencyBuildInfo | None:
+    build_info = inspect_build_info(command)
+    if build_info is not None and build_info.version == version:
+        return build_info
+    if version is not None:
+        return DependencyBuildInfo(version)
+    return None
 
 
 def _report(

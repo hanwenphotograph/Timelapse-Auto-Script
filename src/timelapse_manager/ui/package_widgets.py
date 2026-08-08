@@ -38,7 +38,7 @@ class DependencyRow(ctk.CTkFrame):
         spec: DependencySpec,
         action: Callable[[str], None],
     ) -> None:
-        super().__init__(parent, fg_color="transparent", corner_radius=0, height=76)
+        super().__init__(parent, fg_color="transparent", corner_radius=0, height=84)
         self.grid_propagate(False)
         self.grid_columnconfigure(0, weight=4, minsize=245)
         self.grid_columnconfigure(2, weight=5, minsize=280)
@@ -77,8 +77,11 @@ class DependencyRow(ctk.CTkFrame):
             font=ctk.CTkFont(family=FONT_FAMILY, size=10, weight="bold"),
         )
         self.badge.grid(row=0, column=1, padx=10)
+        detail_frame = ctk.CTkFrame(self, fg_color="transparent")
+        detail_frame.grid(row=0, column=2, sticky="ew", padx=10)
+        detail_frame.grid_columnconfigure(0, weight=1)
         self.detail = ctk.CTkLabel(
-            self,
+            detail_frame,
             text="等待检测",
             text_color=MUTED,
             font=ctk.CTkFont(family=FONT_FAMILY, size=10),
@@ -86,7 +89,17 @@ class DependencyRow(ctk.CTkFrame):
             justify="left",
             wraplength=300,
         )
-        self.detail.grid(row=0, column=2, sticky="ew", padx=10)
+        self.detail.grid(row=0, column=0, sticky="ew")
+        self.metadata = ctk.CTkLabel(
+            detail_frame,
+            text="",
+            text_color=TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=10),
+            anchor="w",
+            justify="left",
+            wraplength=340,
+        )
+        self.metadata.grid(row=1, column=0, sticky="ew", pady=(3, 0))
         self.button = ctk.CTkButton(
             self,
             text=spec.action_label if spec.action_id else "",
@@ -112,6 +125,8 @@ class DependencyRow(ctk.CTkFrame):
         label, color, background = STATE_STYLE[status.state]
         self.badge.configure(text=label, text_color=color, fg_color=background)
         self.detail.configure(text=status.detail)
+        metadata = status.build_info.summary if status.build_info is not None else ""
+        self.metadata.configure(text=metadata)
         if not self.spec.action_id:
             return
         enabled = status.action_available and not busy

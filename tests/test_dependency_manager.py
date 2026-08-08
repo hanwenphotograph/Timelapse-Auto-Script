@@ -13,6 +13,7 @@ from timelapse_manager.dependency_manager.installation import (
     DependencyInstaller,
     InstallPlan,
 )
+from timelapse_manager.dependency_manager.models import DependencyBuildInfo
 from timelapse_manager.dependency_manager.progress import InstallProgressTracker
 from timelapse_manager.dependency_manager.sunset_resources import (
     SunsetResourceSnapshot,
@@ -85,6 +86,15 @@ class DependencyInspectionTests(unittest.TestCase):
                 "timelapse_manager.dependency_manager.inspection.inspect_sunset_resources",
                 return_value=resources,
             ),
+            patch(
+                "timelapse_manager.dependency_manager.inspection.inspect_build_info",
+                side_effect=lambda command: DependencyBuildInfo(
+                    "0.10.0" if "sunsetscore" in command[0] else "0.2.0",
+                    "main",
+                    "2026-08-08T12:30:00Z",
+                    "abc123",
+                ),
+            ),
         ):
             progress = []
             statuses = DependencyInspector().inspect(
@@ -99,6 +109,8 @@ class DependencyInspectionTests(unittest.TestCase):
         self.assertEqual(statuses[6].state, "ready")
         self.assertEqual(statuses[7].spec.parent_id, "sunsetscore")
         self.assertEqual(statuses[8].state, "ready")
+        self.assertEqual(statuses[2].build_info.branch, "main")
+        self.assertEqual(statuses[6].build_info.build_time, "2026-08-08T12:30:00Z")
         self.assertEqual([item[0] for item in progress], list(range(1, 11)))
         self.assertTrue(all(item[1] == 10 for item in progress))
 
