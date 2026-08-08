@@ -22,6 +22,7 @@ from timelapse_manager.ui.dialogs import NewTaskDialog, YamlEditorDialog
 from timelapse_manager.ui.package_page import PackagePage
 from timelapse_manager.ui.progress import compact_timestamp, task_progress_label
 from timelapse_manager.ui.table import ModernTable
+from timelapse_manager.ui.task_deletion import delete_tasks
 from timelapse_manager.ui.theme import (
     ACCENT,
     BACKGROUND,
@@ -452,7 +453,8 @@ class TimelapseApp:
             ),
             ("强制停止", lambda: self.control_task("stop"), False, True, 94),
             ("重启", self.restart_task, False, False, 76),
-            ("删除", self.delete_task, False, True, 76),
+            ("全选", self.select_all_tasks, False, False, 76),
+            ("删除所选", self.delete_task, False, True, 92),
         )
         for index, (label, command, primary, danger, width) in enumerate(task_actions):
             action_button(
@@ -485,12 +487,16 @@ class TimelapseApp:
                 "pid": 70,
                 "started": 210,
             },
+            selectmode="extended",
         )
         self.task_table.grid(row=1, column=0, sticky="nsew")
         self.task_table.tree.bind("<Double-1>", lambda _event: self.edit_task())
         self.task_table.tree.bind(
             "<<TreeviewSelect>>", lambda _event: self._selection_changed()
         )
+        self.task_table.tree.bind("<Control-a>", self.select_all_tasks)
+        if sys.platform == "darwin":
+            self.task_table.tree.bind("<Command-a>", self.select_all_tasks)
         self._tables.append(self.task_table)
 
     def _build_processes_page(self) -> None:
@@ -762,18 +768,32 @@ class TimelapseApp:
         for table in self._tables:
             apply_status_tags(table.tree)
 
-    def _selected_task_id(self) -> str | None:
-        return self.task_table.selected_id()
+    def _selected_task_ids(self) -> tuple[str, ...]:
+        return self.task_table.selected_ids()
 
     def _selection_changed(self) -> None:
-        task_id = self._selected_task_id()
-        if not task_id:
+        task_ids = self._selected_task_ids()
+        if not task_ids:
             self.selected_task_value.set("尚未选择任务")
             return
+        if len(task_ids) > 1:
+            self.selected_task_value.set(f"已选择 {len(task_ids)} 个任务")
+            return
+        task_id = task_ids[0]
         values = self.task_table.tree.item(task_id, "values")
         name = values[1] if len(values) > 1 else task_id
         self.selected_task_value.set(f"已选择：{name}  ·  {task_id}")
         self.log_task_value.set(task_id)
+
+    def select_all_tasks(self, _event: object | None = None) -> str:
+        task_ids = self.task_table.tree.get_children()
+        if not task_ids:
+            self._set_status("当前没有可选择的任务", "warning")
+            return "break"
+        self.task_table.tree.selection_set(*task_ids)
+        self.task_table.tree.focus(task_ids[0])
+        self._selection_changed()
+        return "break"
 
     def _open_overview_task(self) -> None:
         task_id = self.overview_table.selected_id()
@@ -787,10 +807,15 @@ class TimelapseApp:
             self._selection_changed()
 
     def _require_task(self) -> str | None:
-        task_id = self._selected_task_id()
-        if task_id:
-            return task_id
-        self._set_status("请先从任务列表选择一个任务", "warning")
+        task_ids = self._selected_task_ids()
+        if len(task_ids) == 1:
+            return task_ids[0]
+        message = (
+            "此操作一次只能处理一个任务，请仅选择一个任务"
+            if task_ids
+            else "请先从任务列表选择一个任务"
+        )
+        self._set_status(message, "warning")
         return None
 
     def create_task(self) -> None:
@@ -856,22 +881,41 @@ class TimelapseApp:
             self._async_action("重启任务", lambda: self.service.restart_task(task_id))
 
     def delete_task(self) -> None:
-        task_id = self._require_task()
-        if not task_id:
+        task_ids = self._selected_task_ids()
+        if not task_ids:
+            self._set_status("请先选择要删除的任务", "warning")
             return
+        count = len(task_ids)
         answer = messagebox.askyesnocancel(
-            "删除任务",
+            "批量删除任务" if count > 1 else "删除任务",
+            f"确定删除所选的 {count} 个任务？\n\n"
             "选择“是”会同时删除日志和运行状态；选择“否”只删除任务 YAML。",
             parent=self.root,
         )
         if answer is None:
             return
-        try:
-            self.service.delete_task(task_id, purge_runtime=answer)
-            self.refresh_all()
-            self._set_status("任务已删除")
-        except Exception as exc:
-            messagebox.showerror("删除失败", str(exc), parent=self.root)
+        result = delete_tasks(
+            task_ids,
+            lambda task_id: self.service.delete_task(task_id, purge_runtime=answer),
+        )
+        self.refresh_all()
+        if result.failures:
+            details = "\n".join(
+                f"{task_id}：{error}" for task_id, error in result.failures
+            )
+            messagebox.showerror(
+                "部分任务删除失败" if result.deleted else "删除失败",
+                f"已删除 {len(result.deleted)} 个任务，"
+                f"未删除 {len(result.failures)} 个任务。\n\n{details}",
+                parent=self.root,
+            )
+            self._set_status(
+                f"已删除 {len(result.deleted)} 个任务，"
+                f"{len(result.failures)} 个任务删除失败",
+                "warning",
+            )
+            return
+        self._set_status(f"已删除 {len(result.deleted)} 个任务")
 
     def stop_process(self) -> None:
         selected = self.process_table.tree.selection()
@@ -896,7 +940,7 @@ class TimelapseApp:
             self._set_status(f"刷新失败：{exc}", "error")
             return
 
-        old_selection = select or self._selected_task_id()
+        old_selection = (select,) if select else self._selected_task_ids()
         self.task_table.clear()
         self.overview_table.clear()
         self._task_ids = []
@@ -935,10 +979,14 @@ class TimelapseApp:
                 tags=tag,
             )
 
-        if old_selection and self.task_table.tree.exists(old_selection):
-            self.task_table.tree.selection_set(old_selection)
-            self.task_table.tree.focus(old_selection)
-            self.task_table.tree.see(old_selection)
+        restored_selection = tuple(
+            task_id for task_id in old_selection if self.task_table.tree.exists(task_id)
+        )
+        if restored_selection:
+            self.task_table.tree.selection_set(*restored_selection)
+            focus = select if select in restored_selection else restored_selection[0]
+            self.task_table.tree.focus(focus)
+            self.task_table.tree.see(focus)
             self._selection_changed()
         elif not items:
             self.selected_task_value.set("尚未创建任务")

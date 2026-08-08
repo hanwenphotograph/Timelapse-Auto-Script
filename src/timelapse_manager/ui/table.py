@@ -37,10 +37,7 @@ def _proportional_widths(
     weight_total = sum(weights.values())
     if total <= 0 or weight_total <= 0:
         return {name: 0 for name in columns}
-    values = {
-        name: total * weights[name] // weight_total
-        for name in columns
-    }
+    values = {name: total * weights[name] // weight_total for name in columns}
     remainder = total - sum(values.values())
     order = sorted(
         columns,
@@ -61,6 +58,8 @@ class ModernTable(ctk.CTkFrame):
         columns: Iterable[str],
         headings: dict[str, str],
         widths: dict[str, int],
+        *,
+        selectmode: str = "browse",
     ) -> None:
         super().__init__(
             parent,
@@ -77,7 +76,7 @@ class ModernTable(ctk.CTkFrame):
             self,
             columns=self._columns,
             show="headings",
-            selectmode="browse",
+            selectmode=selectmode,
             style="Modern.Treeview",
         )
         for column in self._columns:
@@ -123,5 +122,8 @@ class ModernTable(ctk.CTkFrame):
             self.tree.delete(*children)
 
     def selected_id(self) -> str | None:
-        selected = self.tree.selection()
+        selected = self.selected_ids()
         return selected[0] if selected else None
+
+    def selected_ids(self) -> tuple[str, ...]:
+        return tuple(self.tree.selection())
