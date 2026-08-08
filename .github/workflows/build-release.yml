@@ -27,7 +27,7 @@ jobs:
             runner: windows-2022
             suffix: windows-x64
           - platform: macOS Intel
-            runner: macos-13
+            runner: macos-15-intel
             suffix: macos-x64
 
     steps:

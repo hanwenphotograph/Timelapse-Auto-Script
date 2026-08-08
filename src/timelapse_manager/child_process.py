@@ -122,6 +122,7 @@ class ManagedChild:
             return None
         code = self.process.poll()
         if code is not None:
+            self._join_reader()
             self._report_exit(code)
         return code
 
@@ -129,10 +130,13 @@ class ManagedChild:
         if not self.process:
             raise ProcessError(f"{self.role} 尚未启动")
         code = self.process.wait(timeout=timeout)
-        if self._reader:
-            self._reader.join(timeout=2)
+        self._join_reader()
         self._report_exit(code)
         return code
+
+    def _join_reader(self) -> None:
+        if self._reader and self._reader is not threading.current_thread():
+            self._reader.join(timeout=2)
 
     def _report_exit(self, code: int) -> None:
         if self._exit_reported:
