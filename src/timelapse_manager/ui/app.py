@@ -75,7 +75,7 @@ STATUS_TEXT = {
 ROLE_TEXT = {
     "runner": "任务工作进程",
     "camera": "相机拍摄",
-    "bracketlapse": "后期处理",
+    "bracketlapse": "HDR处理",
     "archive": "归档",
 }
 

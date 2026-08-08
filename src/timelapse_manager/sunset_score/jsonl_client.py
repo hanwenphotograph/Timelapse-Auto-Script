@@ -15,9 +15,9 @@ from timelapse_manager.sunset_score.jsonl_protocol import (
     SunsetScoreProtocolError,
     decode_event,
     encode_request,
-    format_scan_response,
     ready_error,
 )
+from timelapse_manager.sunset_score.progress import SunsetProgressTracker
 
 if TYPE_CHECKING:
     from timelapse_manager.child_process import ManagedChild
@@ -44,6 +44,7 @@ class SunsetScoreJsonlClient:
         self._next_id = 1
         self._pending: dict[int, PendingRequest] = {}
         self._responses: dict[int, dict[str, Any]] = {}
+        self._progress = SunsetProgressTracker(runtime, interval)
 
     def scan(self, session_id: str, directory: Path) -> None:
         self._send(
@@ -52,6 +53,7 @@ class SunsetScoreJsonlClient:
             directory=str(directory.resolve()),
             wait=False,
         )
+        self._progress.submitted(session_id, directory)
 
     def finalize(self, session_id: str) -> Path:
         response = self._send("finalize", session_id=session_id, wait=True)
@@ -100,9 +102,7 @@ class SunsetScoreJsonlClient:
         except ProcessError as exc:
             self._disable(str(exc))
             raise SunsetScoreProtocolError(str(exc)) from exc
-        if not wait:
-            return None
-        return self._wait_for_response(request_id)
+        return self._wait_for_response(request_id) if wait else None
 
     def _ensure_started(self) -> ManagedChild:
         if self._disabled_reason:
@@ -138,7 +138,9 @@ class SunsetScoreJsonlClient:
                     child.terminate()
                     raise SunsetScoreProtocolError(reason)
                 with self._condition:
-                    self._condition.wait(timeout=min(self.runtime.poll_interval, remaining))
+                    self._condition.wait(
+                        timeout=min(self.runtime.poll_interval, remaining)
+                    )
             return child
 
     def _wait_for_response(self, request_id: int) -> dict[str, Any]:
@@ -174,9 +176,7 @@ class SunsetScoreJsonlClient:
             if pending is None:
                 return
             if pending.command == "scan":
-                message = format_scan_response(pending.session_id, value)
-                if message is not None:
-                    self.runtime.log(message)
+                self._progress.response(pending.session_id, value)
             else:
                 self._responses[request_id] = value
             self._condition.notify_all()

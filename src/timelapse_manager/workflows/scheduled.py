@@ -78,6 +78,7 @@ class ScheduledWorkflow:
             else None
         )
         standby = None
+        standby_role = "bracketlapse-standby"
         if processing_enabled:
             standby_argv = self.runtime.bracket_command + [
                 "--standby",
@@ -86,12 +87,16 @@ class ScheduledWorkflow:
                 str(self.project["watch_quiet_seconds"]),
             ]
             standby = self.runtime.spawn(
-                "bracketlapse-standby",
+                standby_role,
                 standby_argv,
                 cwd=spec.work_dir,
                 extra_env=env,
                 on_line=bracket_output_handler(
-                    self.runtime, spec, score_session.scan if score_session else None
+                    self.runtime,
+                    spec,
+                    score_session.scan if score_session else None,
+                    progress=capture_progress,
+                    child_role=standby_role,
                 ),
             )
             probe_seconds = float(self.project["runtime"]["startup_probe_seconds"])
@@ -130,7 +135,12 @@ class ScheduledWorkflow:
             camera_argv,
             cwd=spec.work_dir,
             extra_env={"PYTHONUNBUFFERED": "1"},
-            on_line=camera_output_handler(self.runtime, spec, capture_progress),
+            on_line=camera_output_handler(
+                self.runtime,
+                spec,
+                capture_progress,
+                hdr_role=standby_role if processing_enabled else None,
+            ),
         )
         self.runtime.notify_async(
             "camera_process_started", f"camera-timelapse 已启动，目录 {spec.work_dir}"
@@ -145,7 +155,7 @@ class ScheduledWorkflow:
                 raise HardStopRequested
             if self.runtime.finish_now.is_set() and camera.poll() is None:
                 early = True
-                self.runtime.set_phase("提前结束拍摄", "正在停止相机并转入后期处理")
+                self.runtime.set_phase("提前结束拍摄", "正在停止相机并转入 HDR 处理")
                 camera.terminate()
             camera_code = camera.poll()
             if camera_code is not None:
@@ -164,18 +174,29 @@ class ScheduledWorkflow:
                 str(spec.work_dir),
                 "--merge-subdirs",
             ]
+            standby_role = "bracketlapse-process"
             standby = self.runtime.spawn(
-                "bracketlapse-process",
+                standby_role,
                 merge_argv,
                 cwd=spec.work_dir,
                 extra_env=env,
                 on_line=bracket_output_handler(
-                    self.runtime, spec, score_session.scan if score_session else None
+                    self.runtime,
+                    spec,
+                    score_session.scan if score_session else None,
+                    progress=capture_progress,
+                    child_role=standby_role,
                 ),
+            )
+            self.runtime.set_child_progress(
+                standby_role,
+                completed=capture_progress.hdr_completed,
+                total=capture_progress.rounds,
+                phase="HDR处理",
             )
         if processing_enabled and success:
             assert standby is not None
-            self.runtime.set_phase("等待后期处理", str(spec.work_dir))
+            self.runtime.set_phase("等待 HDR 处理", str(spec.work_dir))
             code = self.runtime.wait_child(standby)
             success = code == 0
         return self.finisher.finish(

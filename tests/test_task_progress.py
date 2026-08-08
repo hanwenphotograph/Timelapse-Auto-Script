@@ -115,6 +115,30 @@ class TaskProgressTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(items[1].value or 0, 0.4)
+        self.assertEqual(items[1].value_text, "2/5")
+
+    def test_hdr_count_progress_can_retreat_when_total_increases(self) -> None:
+        state = {
+            "status": "running",
+            "children": [
+                {
+                    "role": "bracketlapse-standby",
+                    "pid": 102,
+                    "status": "running",
+                    "progress": {"completed": 1, "total": 2},
+                }
+            ],
+        }
+
+        first = task_progress_items(self.task, state)[1]
+        state["children"][0]["progress"]["total"] = 4
+        second = task_progress_items(self.task, state)[1]
+
+        self.assertEqual(first.label, "HDR处理 · PID 102")
+        self.assertEqual(first.value_text, "1/2")
+        self.assertEqual(second.value_text, "1/4")
+        self.assertEqual(first.value, 0.5)
+        self.assertEqual(second.value, 0.25)
 
     def test_active_task_after_capture_window_is_not_reported_as_complete(self) -> None:
         state = {"status": "running", "phase": "等待后期处理"}

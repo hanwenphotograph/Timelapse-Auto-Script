@@ -40,6 +40,7 @@ class _ProgressRow(ctk.CTkFrame):
     def __init__(self, parent: object) -> None:
         super().__init__(parent, fg_color="transparent", corner_radius=0)
         self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(2, minsize=92)
         self.name = ctk.CTkLabel(
             self,
             text="",
@@ -74,7 +75,7 @@ class _ProgressRow(ctk.CTkFrame):
         self.value = ctk.CTkLabel(
             self,
             text="",
-            width=72,
+            width=92,
             height=16,
             text_color=MUTED,
             font=ctk.CTkFont(family=FONT_FAMILY, size=10, weight="bold"),
@@ -96,14 +97,14 @@ class _ProgressRow(ctk.CTkFrame):
             elif not animate and self._animating:
                 self.bar.stop()
             self._animating = animate
-            value_text = _STATUS_TEXT.get(item.status, item.status)
+            value_text = item.value_text or _STATUS_TEXT.get(item.status, item.status)
         else:
             if self._animating:
                 self.bar.stop()
             self._animating = False
             self.bar.configure(mode="determinate")
             self.bar.set(item.value)
-            value_text = f"{item.value:.0%}"
+            value_text = item.value_text or f"{item.value:.0%}"
         self.value.configure(text=value_text, text_color=color)
 
     def destroy(self) -> None:
@@ -151,7 +152,6 @@ class TaskProgressPanel(ctk.CTkFrame):
             scrollbar_button_color=BORDER,
             scrollbar_button_hover_color=ACCENT,
         )
-        # The nested scrollbar otherwise keeps its 200 px default request height.
         self.listing._scrollbar.configure(height=_LIST_HEIGHT)
         self.listing.grid(row=1, column=0, sticky="ew", padx=(12, 5), pady=(0, 8))
         self.listing.grid_columnconfigure(0, weight=1)

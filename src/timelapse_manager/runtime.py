@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from timelapse_manager.child_progress import update_child_progress
 from timelapse_manager.child_process import ManagedChild
 from timelapse_manager.config import ConfigManager
 from timelapse_manager.dependency_manager.paths import DependencyPaths
@@ -116,6 +117,28 @@ class TaskRuntime:
             progress.update(values)
             self.state["progress"] = progress
             self.store.write_state(self.task_id, self.state)
+
+    def set_child_progress(
+        self,
+        role: str,
+        *,
+        completed: int | None = None,
+        total: int | None = None,
+        phase: str | None = None,
+    ) -> bool:
+        with self._state_lock:
+            children, changed = update_child_progress(
+                self.state.get("children", []),
+                role,
+                completed=completed,
+                total=total,
+                phase=phase,
+            )
+            if not changed:
+                return False
+            self.state["children"] = children[-30:]
+            self.store.write_state(self.task_id, self.state)
+            return True
 
     def notify(self, event: str, content: str) -> None:
         self.webhook.notify(event, content)

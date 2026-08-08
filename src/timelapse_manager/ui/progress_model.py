@@ -12,6 +12,7 @@ from timelapse_manager.ui.progress_values import (
     capture_bounds,
     local_naive,
     overall_value,
+    progress_counts,
     progress_value,
 )
 
@@ -31,10 +32,10 @@ _ROLE_LABELS = {
     "runner": "任务工作进程",
     "camera-timelapse": "相机拍摄",
     "camera-timelapse-eternal": "相机拍摄",
-    "bracketlapse-standby": "后期处理",
-    "bracketlapse-process": "后期处理",
+    "bracketlapse-standby": "HDR处理",
+    "bracketlapse-process": "HDR处理",
     "sunsetscore": "晚霞评分",
-    "sunsetscore-resident": "晚霞评分服务",
+    "sunsetscore-resident": "晚霞评分",
     "archive": "归档",
 }
 
@@ -48,6 +49,7 @@ class ProgressItem:
     status: str
     detail: str
     value: float | None
+    value_text: str | None = None
 
 
 def task_progress_items(
@@ -119,6 +121,7 @@ def _subtask_item(
     if not detail:
         detail = _STATUS_LABELS.get(status, status)
     value = progress_value(record)
+    counts = progress_counts(record)
     if status == "completed":
         value = 1.0
     elif value is None and status in {
@@ -133,7 +136,15 @@ def _subtask_item(
     elif value is None and role.startswith("camera-timelapse"):
         value = active_schedule_value(capture_bounds(task), now)
     identity = record.get("id") or pid or f"{role}-{index}"
-    return ProgressItem(f"{source}-{identity}", label, status, detail, value)
+    value_text = f"{counts[0]}/{counts[1]}" if counts is not None else None
+    return ProgressItem(
+        f"{source}-{identity}",
+        label,
+        status,
+        detail,
+        value,
+        value_text,
+    )
 
 
 def _records(value: object) -> tuple[Mapping[str, Any], ...]:
@@ -150,7 +161,7 @@ def _records(value: object) -> tuple[Mapping[str, Any], ...]:
 
 def _role_label(role: str) -> str:
     if role.startswith("bracketlapse-batch-"):
-        return f"后期处理 · 批次 {role.rsplit('-', 1)[-1]}"
+        return f"HDR处理 · 批次 {role.rsplit('-', 1)[-1]}"
     return _ROLE_LABELS.get(role, role)
 
 

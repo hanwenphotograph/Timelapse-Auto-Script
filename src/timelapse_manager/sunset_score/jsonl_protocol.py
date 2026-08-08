@@ -53,13 +53,10 @@ def ready_error(value: dict[str, Any], application_version: str) -> str:
     return ""
 
 
-def format_scan_response(
-    session_id: str | None, value: dict[str, Any]
-) -> str | None:
+def format_scan_response(session_id: str | None, value: dict[str, Any]) -> str | None:
     if value.get("event") == "error":
         return (
-            f"晚霞增量扫描失败：{session_id or '-'}；"
-            f"{value.get('error') or '未知错误'}"
+            f"晚霞增量扫描失败：{session_id or '-'}；{value.get('error') or '未知错误'}"
         )
     if value.get("event") != "scan_complete":
         return None
@@ -68,3 +65,16 @@ def format_scan_response(
         f"照片 {value.get('image_count', 0)} 张，"
         f"采样 {value.get('sampled_count', 0)} 张"
     )
+
+
+def scan_progress(value: dict[str, Any]) -> tuple[int, int] | None:
+    """Return processed and sampled counts from a valid scan response."""
+    if value.get("event") != "scan_complete":
+        return None
+    successful = value.get("successful_count")
+    failed = value.get("failed_count")
+    total = value.get("sampled_count")
+    if not all(type(item) is int and item >= 0 for item in (successful, failed, total)):
+        return None
+    completed = successful + failed
+    return (completed, total) if completed <= total else None

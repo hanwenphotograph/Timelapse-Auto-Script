@@ -19,6 +19,17 @@ class SunsetScoreIntegrationTests(SunsetScoreIntegrationTestCase):
         self.assertIn("晚霞评分已自动启用", log)
         self.assertLess(log.index("晚霞增量扫描完成"), log.index("Creating video"))
         self.assertLess(log.index("Creating video"), log.index("已删除 HDR 照片目录"))
+        child_progress = {
+            child["role"]: child.get("progress") for child in state["children"]
+        }
+        self.assertEqual(
+            child_progress["bracketlapse-standby"],
+            {"completed": 2, "total": 2},
+        )
+        self.assertEqual(
+            child_progress["sunsetscore-resident"],
+            {"completed": 2, "total": 2},
+        )
 
     def test_positive_score_overrides_cleanup_keep_list(self) -> None:
         state, work_dir, _log = self._run_scheduled(

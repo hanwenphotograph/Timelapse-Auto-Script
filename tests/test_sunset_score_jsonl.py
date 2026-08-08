@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from timelapse_manager.sunset_score.jsonl_client import SunsetScoreJsonlClient
 from timelapse_manager.sunset_score.jsonl_protocol import (
     decode_event,
     encode_request,
     ready_error,
+    scan_progress,
 )
+from timelapse_manager.sunset_score.progress import SunsetProgressTracker
 
 
 class SunsetScoreJsonlTests(unittest.TestCase):
@@ -50,7 +55,59 @@ class SunsetScoreJsonlTests(unittest.TestCase):
         )
         assert event is not None
         self.assertEqual(ready_error(event, "0.10.0"), "")
-        self.assertIn("协议版本", ready_error(event | {"protocol_version": 2}, "0.10.0"))
+        self.assertIn(
+            "协议版本", ready_error(event | {"protocol_version": 2}, "0.10.0")
+        )
+
+    def test_scan_progress_validates_processed_and_total_counts(self) -> None:
+        self.assertEqual(
+            scan_progress(
+                {
+                    "event": "scan_complete",
+                    "successful_count": 3,
+                    "failed_count": 1,
+                    "sampled_count": 5,
+                }
+            ),
+            (4, 5),
+        )
+        self.assertIsNone(
+            scan_progress(
+                {
+                    "event": "scan_complete",
+                    "successful_count": 6,
+                    "failed_count": 0,
+                    "sampled_count": 5,
+                }
+            )
+        )
+
+    def test_tracker_updates_submission_and_response_counts(self) -> None:
+        runtime = SimpleNamespace(set_child_progress=Mock(), log=Mock())
+        tracker = SunsetProgressTracker(runtime, interval=2)  # type: ignore[arg-type]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            (directory / "frame-1.jpg").write_bytes(b"image")
+            tracker.submitted("session-a", directory)
+            (directory / "frame-2.jpg").write_bytes(b"image")
+            (directory / "frame-3.jpg").write_bytes(b"image")
+            tracker.submitted("session-a", directory)
+
+        tracker.response(
+            "session-a",
+            {
+                "event": "scan_complete",
+                "successful_count": 1,
+                "failed_count": 0,
+                "sampled_count": 2,
+            },
+        )
+
+        self.assertEqual(runtime.set_child_progress.call_count, 3)
+        self.assertEqual(
+            runtime.set_child_progress.call_args.kwargs,
+            {"completed": 1, "total": 2, "phase": "晚霞评分"},
+        )
 
 
 if __name__ == "__main__":

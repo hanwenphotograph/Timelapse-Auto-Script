@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Callable, TYPE_CHECKING
 
 from timelapse_manager.bracketlapse import parse_hdr_ready
@@ -34,27 +35,43 @@ class WorkSpec:
 @dataclass
 class CaptureProgress:
     started: bool = False
+    rounds: int = 0
+    hdr_completed: int = 0
 
 
 def camera_output_handler(
     runtime: TaskRuntime,
     spec: WorkSpec,
     progress: CaptureProgress | None = None,
+    *,
+    hdr_role: str | None = None,
 ) -> Callable[[str], None]:
     capture_started = False
     capture_ended = False
+    capture_rounds = 0
 
     def handle(line: str) -> None:
-        nonlocal capture_started, capture_ended
-        if "Starting capture round " in line and not capture_started:
-            capture_started = True
+        nonlocal capture_started, capture_ended, capture_rounds
+        match = re.search(r"Starting\s+capture\s+round\s+(\d+)", line)
+        if match:
+            capture_rounds = max(capture_rounds, int(match.group(1)))
             if progress is not None:
-                progress.started = True
-            runtime.set_phase("正在拍摄", f"{spec.label}任务已进入实际拍摄阶段")
-            runtime.notify_async(
-                "entered_key_node",
-                f"camera-timelapse 真正开始拍摄，日期 {spec.start_date}，目录 {spec.work_dir}",
-            )
+                progress.rounds = capture_rounds
+            if hdr_role is not None:
+                runtime.set_child_progress(
+                    hdr_role,
+                    total=capture_rounds,
+                    phase="HDR处理",
+                )
+            if not capture_started:
+                capture_started = True
+                if progress is not None:
+                    progress.started = True
+                runtime.set_phase("正在拍摄", f"{spec.label}任务已进入实际拍摄阶段")
+                runtime.notify_async(
+                    "entered_key_node",
+                    f"camera-timelapse 真正开始拍摄，日期 {spec.start_date}，目录 {spec.work_dir}",
+                )
         if (
             "Scheduled end time " in line
             and "reached; stopping after this round" in line
@@ -75,6 +92,9 @@ def bracket_output_handler(
     runtime: TaskRuntime,
     spec: WorkSpec,
     on_hdr_ready: Callable[[], None] | None = None,
+    *,
+    progress: CaptureProgress | None = None,
+    child_role: str = "bracketlapse-standby",
 ) -> Callable[[str], None]:
     enfuse_started = False
     deflick_started = False
@@ -82,8 +102,20 @@ def bracket_output_handler(
     def handle(line: str) -> None:
         nonlocal enfuse_started, deflick_started
         event = parse_hdr_ready(line, spec.work_dir)
-        if event is not None and on_hdr_ready is not None:
-            on_hdr_ready()
+        if event is not None:
+            if progress is not None:
+                progress.hdr_completed = max(
+                    progress.hdr_completed,
+                    event.frame_number,
+                )
+                progress.rounds = max(progress.rounds, event.frame_number)
+            runtime.set_child_progress(
+                child_role,
+                completed=event.frame_number,
+                phase="HDR处理",
+            )
+            if on_hdr_ready is not None:
+                on_hdr_ready()
         if "Fusing " in line and not enfuse_started:
             enfuse_started = True
             runtime.set_phase("HDR 融合", str(spec.work_dir))

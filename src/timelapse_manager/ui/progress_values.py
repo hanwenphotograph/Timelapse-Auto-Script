@@ -30,12 +30,23 @@ def progress_value(value: object) -> float | None:
         percent = value.get("percent")
         if isinstance(percent, Real) and not isinstance(percent, bool):
             return _clamp(float(percent) / 100)
-        completed = value.get("completed")
-        total = value.get("total")
-        if _is_number(completed) and _is_number(total) and float(total) > 0:
-            return _clamp(float(completed) / float(total))
+        counts = progress_counts(value)
+        if counts is not None and counts[1] > 0:
+            return _clamp(counts[0] / counts[1])
         return None
     return _unit_value(value)
+
+
+def progress_counts(value: object) -> tuple[int, int] | None:
+    """Extract exact completed/total counts from a progress mapping."""
+    if not isinstance(value, Mapping):
+        return None
+    completed = value.get("completed")
+    total = value.get("total")
+    if all(type(item) is int and item >= 0 for item in (completed, total)):
+        return (completed, total) if completed <= total else None
+    nested = value.get("progress")
+    return progress_counts(nested)
 
 
 def capture_bounds(

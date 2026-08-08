@@ -18,6 +18,7 @@ from timelapse_manager.errors import TaskError
 from timelapse_manager.io_utils import now_iso
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.presets import validate_task
+from timelapse_manager.progress_compat import TaskLogProgressReader
 from timelapse_manager.process_utils import (
     detached_creation_flags,
     process_identity,
@@ -32,6 +33,7 @@ from timelapse_manager.webhook import WebhookClient
 class ManagerService:
     def __init__(self, root: Path | None = None):
         self.paths = AppPaths.discover(root)
+        self._log_progress = TaskLogProgressReader()
         self.config_manager = ConfigManager(self.paths)
         self.config: LoadedConfig
         self.store: TaskStore
@@ -67,15 +69,29 @@ class ManagerService:
         return self.store.create(name, preset, task_id)
 
     def list_tasks(self) -> list[dict[str, Any]]:
-        return self.store.list_with_state()
+        items = self.store.list_with_state()
+        for item in items:
+            task_id = str(item["task"]["id"])
+            item["state"] = self._display_state(task_id, item["state"])
+        return items
 
     def task_details(self, task_id: str) -> dict[str, Any]:
         return {
             "task": self.store.load(task_id),
-            "state": self.store.read_state(task_id, reconcile=True),
+            "state": self._display_state(
+                task_id,
+                self.store.read_state(task_id, reconcile=True),
+            ),
             "definition_path": str(self.store.definition_path(task_id)),
             "log_path": str(self.store.log_path(task_id)),
         }
+
+    def _display_state(
+        self,
+        task_id: str,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._log_progress.enrich_state(state, self.store.log_path(task_id))
 
     def validate_task_start(
         self, task_id: str
@@ -153,9 +169,7 @@ class ManagerService:
             with self.store.start_lock(task_id):
                 state = self.store.read_state(task_id, reconcile=True)
                 if state["status"] in ACTIVE_STATUSES:
-                    raise TaskError(
-                        f"任务已经在运行，PID={state.get('runner_pid')}"
-                    )
+                    raise TaskError(f"任务已经在运行，PID={state.get('runner_pid')}")
                 self.store.clear_controls(task_id)
                 state = self.store.default_state(task_id)
                 state.update(
