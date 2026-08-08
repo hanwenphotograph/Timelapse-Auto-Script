@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -15,12 +14,9 @@ from typing import Any
 
 from timelapse_manager.dependency_manager.progress import InstallProgressTracker
 from timelapse_manager.dependency_manager.sunset_resources import (
-    MODEL_NAME,
-    MODEL_SIZE,
-    PROJECTOR_NAME,
-    PROJECTOR_SIZE,
+    query_sunset_resources,
 )
-from timelapse_manager.process_utils import format_command, resolve_command
+from timelapse_manager.process_utils import format_command
 from timelapse_manager.dependency_manager.system_install import (
     system_install_command,
 )
@@ -125,56 +121,14 @@ class DependencyInstaller:
 
     @staticmethod
     def _sunset_plan(commands: dict[str, Any]) -> InstallPlan | None:
-        try:
-            executable = resolve_command(
-                str(commands.get("sunsetscore", "sunsetscore"))
-            )[0]
-        except Exception:
-            return None
-        interpreter = _console_script_python(Path(executable))
-        if not interpreter:
-            return None
-        code = (
-            "from sunsetscore.log import configure_logging; configure_logging(); "
-            "from sunsetscore.runtime.install import ensure_runtime_environment; "
-            "ensure_runtime_environment()"
+        snapshot = query_sunset_resources(
+            str(commands.get("sunsetscore", "sunsetscore"))
         )
-        command = (str(interpreter), "-c", code)
+        if not snapshot.command:
+            return None
         return InstallPlan(
-            command,
+            (*snapshot.command, "runtime", "prepare"),
             "SunsetScore 将自动选择推理后端，并下载约 1.6 GB 的模型与运行时资源。"
             "根据平台和 GPU 情况，缓存占用可能更大。是否继续？",
-            (
-                (MODEL_NAME, MODEL_SIZE),
-                (PROJECTOR_NAME, PROJECTOR_SIZE),
-            ),
+            snapshot.artifacts,
         )
-
-
-def _console_script_python(executable: Path) -> Path | None:
-    if executable.name.lower().startswith("python") and executable.is_file():
-        return executable
-    if os.name == "nt":
-        candidate = executable.parent / "python.exe"
-        return candidate if candidate.is_file() else None
-    try:
-        with executable.open("rb") as handle:
-            first_line = handle.readline(512).decode("utf-8").strip()
-    except (OSError, UnicodeDecodeError):
-        return None
-    if not first_line.startswith("#!"):
-        return None
-    parts = shlex.split(first_line[2:])
-    if not parts:
-        return None
-    if Path(parts[0]).name == "env" and len(parts) > 1:
-        resolved = shutil.which(parts[1])
-        return Path(resolved) if resolved else None
-    interpreter = Path(parts[0])
-    if interpreter.is_file():
-        return interpreter
-    for name in ("python", "python3"):
-        candidate = executable.parent / name
-        if candidate.is_file():
-            return candidate
-    return None

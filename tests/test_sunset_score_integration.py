@@ -1,91 +1,13 @@
 from __future__ import annotations
 
-import sys
-import tempfile
 import time
 import unittest
-from pathlib import Path
 
-from timelapse_manager.config import ConfigManager
 from timelapse_manager.io_utils import load_yaml, save_yaml, yaml_text
-from timelapse_manager.paths import AppPaths
-from timelapse_manager.service import ManagerService
-from timelapse_manager.task_store import ACTIVE_STATUSES
+from tests.sunset_integration_support import SunsetScoreIntegrationTestCase
 
 
-REPOSITORY = Path(__file__).resolve().parents[1]
-FAKE_CAMERA = REPOSITORY / "tests" / "fixtures" / "fake_camera.py"
-FAKE_BRACKET = REPOSITORY / "tests" / "fixtures" / "fake_bracketlapse.py"
-FAKE_SUNSET = REPOSITORY / "tests" / "fixtures" / "fake_sunsetscore.py"
-
-
-def command_for(script: Path) -> str:
-    return f'"{sys.executable}" "{script}"'
-
-
-class SunsetScoreIntegrationTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
-        self.paths = AppPaths.discover(self.root)
-        manager = ConfigManager(self.paths)
-        manager.ensure()
-        project = load_yaml(self.paths.config_file)
-        project["auto_root"] = str(self.root / "output")
-        project["commands"].update(
-            {
-                "camera": command_for(FAKE_CAMERA),
-                "bracketlapse": command_for(FAKE_BRACKET),
-                "bracketlapse_fallback": "",
-                "sunsetscore": command_for(FAKE_SUNSET),
-            }
-        )
-        project["sunset_score"]["interval"] = 1
-        project["runtime"]["startup_probe_seconds"] = 0.05
-        project["eternal"]["batch_groups"] = 2
-        save_yaml(self.paths.config_file, project)
-        self.service = ManagerService(self.root)
-
-    def tearDown(self) -> None:
-        for item in self.service.list_tasks():
-            if item["state"]["status"] in ACTIVE_STATUSES:
-                try:
-                    self.service.request(item["task"]["id"], "stop")
-                except Exception:
-                    pass
-        time.sleep(0.2)
-        self.temp.cleanup()
-
-    def _run_scheduled(
-        self,
-        environment: dict[str, str],
-        *,
-        keep_directories: list[str] | None = None,
-        cleanup_enabled: bool | None = None,
-    ) -> tuple[dict, Path, str]:
-        task = self.service.create_task("晚霞评分集成测试", "scheduled_once")
-        definition = self.service.store.load(task["id"])
-        definition["environment"] = environment
-        if keep_directories is not None:
-            definition["cleanup"]["keep_directories"] = keep_directories
-        if cleanup_enabled is not None:
-            definition["cleanup"]["enabled"] = cleanup_enabled
-        self.service.store.save_text(task["id"], yaml_text(definition))
-        self.service.start_task(task["id"])
-        state = self._wait_terminal(task["id"])
-        work_dir = Path(definition["capture"]["work_dir"])
-        log = self.service.store.log_path(task["id"]).read_text(encoding="utf-8")
-        return state, work_dir, log
-
-    def _wait_terminal(self, task_id: str, timeout: float = 15) -> dict:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            state = self.service.store.read_state(task_id, reconcile=True)
-            if state["status"] not in ACTIVE_STATUSES:
-                return state
-            time.sleep(0.05)
-        self.fail(f"任务 {task_id} 未在 {timeout} 秒内结束")
-
+class SunsetScoreIntegrationTests(SunsetScoreIntegrationTestCase):
     def test_negative_score_deletes_hdr_after_video(self) -> None:
         state, work_dir, log = self._run_scheduled(
             {"FAKE_SUNSET_SCORES": "1"}, cleanup_enabled=False
@@ -95,7 +17,8 @@ class SunsetScoreIntegrationTests(unittest.TestCase):
         self.assertTrue((work_dir / "hdr_video" / "timelapse.mp4").exists())
         self.assertFalse((work_dir / "hdr_enfuse").exists())
         self.assertIn("晚霞评分已自动启用", log)
-        self.assertLess(log.index("Creating video"), log.index("晚霞评分:"))
+        self.assertLess(log.index("晚霞增量扫描完成"), log.index("Creating video"))
+        self.assertLess(log.index("Creating video"), log.index("已删除 HDR 照片目录"))
 
     def test_positive_score_overrides_cleanup_keep_list(self) -> None:
         state, work_dir, _log = self._run_scheduled(
@@ -115,12 +38,12 @@ class SunsetScoreIntegrationTests(unittest.TestCase):
 
         self.assertEqual(state["status"], "failed", state)
         self.assertTrue((work_dir / "hdr_enfuse" / "frame-0001.jpg").exists())
-        self.assertIn("SunsetScore 退出码为 7", log)
+        self.assertIn("SunsetScore 常驻服务启动失败，退出码=7", log)
 
     def test_partial_negative_score_fails_and_preserves_hdr(self) -> None:
         state, work_dir, log = self._run_scheduled(
             {
-                "FAKE_BRACKET_FRAMES": "3",
+                "FAKE_CAMERA_ROUNDS": "3",
                 "FAKE_SUNSET_SCORES": "1,1,1",
                 "FAKE_SUNSET_FAILED_INDEXES": "2",
             }
@@ -166,6 +89,62 @@ class SunsetScoreIntegrationTests(unittest.TestCase):
 
         self.assertEqual(state["status"], "completed", state)
         self.assertTrue(list((self.root / "output").rglob("hdr_enfuse/frame-0001.jpg")))
+
+    def test_standby_scores_before_capture_finishes_and_reuses_model(
+        self,
+    ) -> None:
+        events = self.root / "model-events.txt"
+        state, _work_dir, log = self._run_scheduled(
+            {
+                "FAKE_CAMERA_ROUNDS": "5",
+                "FAKE_CAMERA_DELAY": "0.08",
+                "FAKE_SUNSET_SCORES": "4",
+                "FAKE_SUNSET_MODEL_EVENTS": str(events),
+            },
+            cleanup_enabled=False,
+        )
+
+        self.assertEqual(state["status"], "completed", state)
+        self.assertLess(
+            log.index("[bracketlapse-standby] Fusing"),
+            log.index("Scheduled end time"),
+        )
+        self.assertLess(log.index("晚霞增量扫描完成"), log.index("Creating video"))
+        event_lines = events.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(event_lines.count("model-start"), 1)
+        self.assertGreaterEqual(
+            sum(line.startswith("score:") for line in event_lines), 1
+        )
+
+    def test_eternal_batches_share_one_score_model(self) -> None:
+        events = self.root / "eternal-model-events.txt"
+        task = self.service.create_task("永续模型复用", "eternal")
+        definition = self.service.store.load(task["id"])
+        definition["environment"] = {
+            "FAKE_CAMERA_ROUNDS": "10",
+            "FAKE_CAMERA_DELAY": "0.03",
+            "FAKE_SUNSET_SCORES": "4",
+            "FAKE_SUNSET_MODEL_EVENTS": str(events),
+        }
+        definition["eternal"]["batch_groups"] = 2
+        self.service.store.save_text(task["id"], yaml_text(definition))
+        self.service.start_task(task["id"])
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            state = self.service.store.read_state(task["id"], reconcile=True)
+            if state.get("progress", {}).get("eternal_batches", 0) >= 3:
+                break
+            time.sleep(0.05)
+        self.service.request(task["id"], "finish_now")
+
+        state = self._wait_terminal(task["id"], timeout=25)
+
+        self.assertEqual(state["status"], "completed", state)
+        event_lines = events.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(event_lines.count("model-start"), 1)
+        self.assertGreaterEqual(
+            sum(line.startswith("score:") for line in event_lines), 2
+        )
 
 
 if __name__ == "__main__":

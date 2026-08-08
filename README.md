@@ -24,7 +24,7 @@ Closing the GUI does not stop background tasks. Reopen it at any time to inspect
 - Python 3.10 or newer.
 - Tk support in the selected Python installation.
 - Camera Timelapse Controller for real capture.
-- Bracketlapse when post-processing is enabled.
+- Bracketlapse 0.2.0 or newer when post-processing is enabled.
 
 The GUI can start before the external workflow tools are installed. Use **包管理 (Package Management)** after startup to inspect or install supported dependencies.
 
@@ -111,7 +111,9 @@ Use **测试文本和图片 (Test Text and Image)** to validate and save the edi
 
 ### SunsetScore
 
-SunsetScore 0.9.0 or newer can sample processed photos and detect sunset glow. Positive results retain `hdr_enfuse`; negative results remove it; analysis failures preserve the photos and fail the task safely. Install or prepare it from **包管理 (Package Management)**, or install the CLI separately with `pipx`.
+SunsetScore 0.10.0 or newer can sample processed photos and detect sunset glow. Positive results retain `hdr_enfuse`; negative results remove it; analysis failures preserve the photos and fail the task safely. Install or prepare it from **包管理 (Package Management)**, or install the CLI separately with `pipx`.
+
+Capture and post-processing use the public dependency protocols. Bracketlapse 0.2.0 or newer stays in one standby process and fuses each complete group as soon as it is ready, emitting an `hdr_ready` event. The manager forwards those events to one SunsetScore 0.10.0 or newer JSONL service, which owns directory scanning, sampling, aggregation, score-file writing, and one task-scoped model reused across all frames and eternal batches. Deflicker and video export finish after HDR production, while scoring can continue in parallel. The manager does not inspect either dependency's internal Python environment or implementation.
 
 ### Appearance
 
@@ -126,7 +128,7 @@ The GUI creates `config/auto_timelapse.yaml` and `config/webhook.yaml` automatic
 | `schema_version` | Configuration format version; normally leave it unchanged. |
 | `auto_root` | Base directory for scheduled and continuous output. |
 | `capture_interval_seconds` | Default delay between capture groups. |
-| `watch_quiet_seconds` | Time a directory must remain unchanged before processing. |
+| `watch_quiet_seconds` | Quiet interval used by Bracketlapse standby before final deflicker and video export. |
 | `disk_space_warning_threshold_gb` | Free-space warning threshold; `0` disables it. |
 | `morning.start_at` / `morning.end_at` | Morning scheduling window. |
 | `dusk.start_at` / `dusk.end_at` | Dusk scheduling window. |

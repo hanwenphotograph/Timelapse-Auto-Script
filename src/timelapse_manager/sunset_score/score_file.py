@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from timelapse_manager.sunset_score.aggregation import summarize
 from timelapse_manager.sunset_score.models import SampleScore, StoredScore, SunsetRange
 
 
@@ -71,11 +70,11 @@ def _parse_document(document: Any) -> StoredScore:
         sunset_ranges=ranges,
         samples=samples,
     )
-    _validate_aggregate(stored)
+    _validate_shape(stored)
     return stored
 
 
-def _validate_aggregate(stored: StoredScore) -> None:
+def _validate_shape(stored: StoredScore) -> None:
     if stored.sampled_count != stored.successful_count + stored.failed_count:
         raise ValueError("采样数与成功、失败数不一致")
     if stored.image_count < stored.sampled_count:
@@ -85,15 +84,8 @@ def _validate_aggregate(stored: StoredScore) -> None:
     indexes = [sample.sample_index for sample in stored.samples]
     if indexes != sorted(set(indexes)) or indexes[-1] > stored.sampled_count:
         raise ValueError("sample_index 必须有序、唯一且位于采样范围内")
-    expected = summarize(stored.samples, stored.sampled_count)
-    actual = (
-        stored.average_score,
-        stored.max_score,
-        stored.has_sunset,
-        stored.sunset_ranges,
-    )
-    if actual != expected:
-        raise ValueError("聚合结论与逐样本结果不一致")
+    if stored.max_score != max(sample.score for sample in stored.samples):
+        raise ValueError("最高分与逐样本结果不一致")
 
 
 def _samples(value: Any) -> tuple[SampleScore, ...]:

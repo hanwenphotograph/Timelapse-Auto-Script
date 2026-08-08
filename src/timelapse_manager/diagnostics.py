@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from timelapse_manager.bracketlapse import detect_bracketlapse
 from timelapse_manager.io_utils import load_yaml, save_yaml
 from timelapse_manager.process_utils import resolve_command
 from timelapse_manager.service import ManagerService
@@ -41,14 +42,7 @@ def run_self_test(service: ManagerService, *, full: bool = False) -> list[CheckR
     check("任务配置", lambda: _check_tasks(service))
 
     commands = service.config.project["commands"]
-    command_checks = (
-        ("camera-timelapse", commands["camera"], None),
-        (
-            "Bracketlapse",
-            commands["bracketlapse"],
-            commands.get("bracketlapse_fallback"),
-        ),
-    )
+    command_checks = (("camera-timelapse", commands["camera"], None),)
     for name, primary, fallback in command_checks:
         try:
             resolved = resolve_command(primary, fallback)
@@ -57,6 +51,20 @@ def run_self_test(service: ManagerService, *, full: bool = False) -> list[CheckR
             results.append(
                 CheckResult("FAIL" if full else "WARN", f"外部命令 {name}", str(exc))
             )
+    bracket = detect_bracketlapse(
+        str(commands["bracketlapse"]),
+        str(commands.get("bracketlapse_fallback") or "") or None,
+    )
+    if bracket.enabled:
+        results.append(
+            CheckResult(
+                "PASS",
+                "外部命令 Bracketlapse",
+                f"{bracket.command[0]}，版本 {bracket.version}",
+            )
+        )
+    else:
+        results.append(CheckResult("FAIL" if full else "WARN", "外部命令 Bracketlapse", bracket.reason))
     sunset = detect_sunset_score(str(commands["sunsetscore"]))
     if sunset.enabled:
         results.append(

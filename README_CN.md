@@ -24,7 +24,7 @@ Timelapse Manager 是一个跨平台的延时摄影任务管理器，同时提�
 - Python 3.10 或更高版本。
 - 当前 Python 安装包含 Tk。
 - 实际拍摄需要 Camera Timelapse Controller。
-- 开启后期处理时需要 Bracketlapse。
+- 开启后期处理时需要 Bracketlapse 0.2.0 或更高版本。
 
 即使尚未安装外部工作流工具，GUI 也可以正常启动。启动后可通过“包管理”检查或安装受支持的依赖。
 
@@ -111,7 +111,9 @@ image_body: '{"msgtype":"image","image":{"base64":"__IMGBASE64__","md5":"__IMGMD
 
 ### SunsetScore
 
-SunsetScore 0.9.0 或更高版本可以抽样分析处理后的照片并识别晚霞。检测到晚霞时保留 `hdr_enfuse`，未检测到时删除该目录；分析失败时保留照片并让任务安全失败。可以从“包管理”安装或准备依赖，也可以单独使用 `pipx` 安装 CLI。
+SunsetScore 0.10.0 或更高版本可以抽样分析处理后的照片并识别晚霞。检测到晚霞时保留 `hdr_enfuse`，未检测到时删除该目录；分析失败时保留照片并让任务安全失败。可以从“包管理”安装或准备依赖，也可以单独使用 `pipx` 安装 CLI。
+
+拍摄和后期处理采用依赖公开协议。Bracketlapse 0.2.0 或更高版本会保持一个 standby 进程，在每个完整曝光组就绪后立即融合并发出 `hdr_ready` 事件。Manager 将事件转发给 SunsetScore 0.10.0 或更高版本的 JSONL 常驻服务，由该服务负责目录扫描、采样、聚合和评分文件写入，并在同一任务的所有帧及永续批次中复用一个模型。HDR 生产完成后再收尾去闪和视频导出，评分可以并行继续。Manager 不会探测两个依赖的内部 Python 环境，也不会复制其内部实现。
 
 ### 界面外观
 
@@ -126,7 +128,7 @@ GUI 会自动创建 `config/auto_timelapse.yaml` 和 `config/webhook.yaml`，同
 | `schema_version` | 配置格式版本，通常无需修改。 |
 | `auto_root` | 定时与持续任务的基础输出目录。 |
 | `capture_interval_seconds` | 拍摄组之间的默认间隔。 |
-| `watch_quiet_seconds` | 目录保持不变多久后开始处理。 |
+| `watch_quiet_seconds` | Bracketlapse standby 在最终去闪和视频导出前使用的静默间隔。 |
 | `disk_space_warning_threshold_gb` | 剩余空间告警阈值，`0` 表示关闭。 |
 | `morning.start_at` / `morning.end_at` | 清晨定时时段。 |
 | `dusk.start_at` / `dusk.end_at` | 黄昏定时时段。 |

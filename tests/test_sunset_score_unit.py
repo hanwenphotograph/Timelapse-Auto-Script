@@ -98,7 +98,7 @@ class SunsetScoreCacheTests(unittest.TestCase):
                 score,
                 self.hdr_dir,
                 interval=1,
-                application_version="0.9.0",
+                application_version="0.10.0",
                 require_retry_safe=True,
             )
 
@@ -111,7 +111,7 @@ class SunsetScoreCacheTests(unittest.TestCase):
                 score,
                 self.hdr_dir,
                 interval=1,
-                application_version="0.9.0",
+                application_version="0.10.0",
                 require_retry_safe=True,
             )
 
@@ -124,7 +124,7 @@ class SunsetScoreCacheTests(unittest.TestCase):
             score,
             self.hdr_dir,
             interval=1,
-            application_version="0.9.0",
+            application_version="0.10.0",
             require_retry_safe=True,
         )
 
@@ -140,7 +140,7 @@ class SunsetScoreCacheTests(unittest.TestCase):
                 score,
                 self.hdr_dir,
                 interval=2,
-                application_version="0.9.0",
+                application_version="0.10.0",
                 require_retry_safe=True,
             )
         (self.hdr_dir / "frame-0003.jpg").write_bytes(b"image")
@@ -149,7 +149,7 @@ class SunsetScoreCacheTests(unittest.TestCase):
                 score,
                 self.hdr_dir,
                 interval=1,
-                application_version="0.9.0",
+                application_version="0.10.0",
                 require_retry_safe=True,
             )
 

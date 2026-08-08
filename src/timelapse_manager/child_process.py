@@ -30,6 +30,7 @@ class ManagedChild:
         on_started: Callable[["ManagedChild"], None],
         on_exited: Callable[["ManagedChild", int], None],
         stop_timeout: float,
+        writable: bool = False,
     ):
         self.role = role
         self.argv = list(argv)
@@ -40,11 +41,13 @@ class ManagedChild:
         self.on_started = on_started
         self.on_exited = on_exited
         self.stop_timeout = stop_timeout
+        self.writable = writable
         self.process: subprocess.Popen[str] | None = None
         self.created_at: float | None = None
         self._reader: threading.Thread | None = None
         self._exit_reported = False
         self._terminate_lock = threading.Lock()
+        self._write_lock = threading.Lock()
 
     @property
     def pid(self) -> int | None:
@@ -61,7 +64,7 @@ class ManagedChild:
                 self.argv,
                 cwd=str(self.cwd) if self.cwd else None,
                 env=self.env,
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.PIPE if self.writable else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -83,6 +86,19 @@ class ManagedChild:
         )
         self._reader.start()
         return self
+
+    def write_line(self, value: str) -> None:
+        if not self.writable:
+            raise ProcessError(f"{self.role} 未启用标准输入")
+        with self._write_lock:
+            if not self.process or self.process.poll() is not None:
+                raise ProcessError(f"{self.role} 已退出，无法写入标准输入")
+            assert self.process.stdin is not None
+            try:
+                self.process.stdin.write(value.rstrip("\r\n") + "\n")
+                self.process.stdin.flush()
+            except (BrokenPipeError, OSError) as exc:
+                raise ProcessError(f"无法写入 {self.role}: {exc}") from exc
 
     def _read_output(self) -> None:
         assert self.process is not None

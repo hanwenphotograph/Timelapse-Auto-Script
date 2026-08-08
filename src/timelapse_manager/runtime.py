@@ -10,9 +10,11 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from timelapse_manager.bracketlapse import detect_bracketlapse
 from timelapse_manager.child_process import ManagedChild
 from timelapse_manager.config import ConfigManager
 from timelapse_manager.io_utils import now_iso
+from timelapse_manager.errors import ConfigError
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.process_utils import process_identity, resolve_command
 from timelapse_manager.sunset_score import SunsetScoreService
@@ -42,9 +44,13 @@ class TaskRuntime:
         self.camera_command = resolve_command(commands["camera"])
         self.bracket_command: list[str] = []
         if self.task["processing"].get("enabled", True):
-            self.bracket_command = resolve_command(
-                commands["bracketlapse"], commands.get("bracketlapse_fallback")
+            bracket = detect_bracketlapse(
+                str(commands["bracketlapse"]),
+                str(commands.get("bracketlapse_fallback") or "") or None,
             )
+            if not bracket.enabled:
+                raise ConfigError(f"Bracketlapse 不可用：{bracket.reason}")
+            self.bracket_command = list(bracket.command)
 
         self._state_lock = threading.RLock()
         self._children_lock = threading.RLock()
@@ -173,6 +179,7 @@ class TaskRuntime:
         cwd: Path | None = None,
         extra_env: dict[str, str] | None = None,
         on_line: Callable[[str], None] | None = None,
+        writable: bool = False,
     ) -> ManagedChild:
         environment = os.environ.copy()
         environment.update(
@@ -192,6 +199,7 @@ class TaskRuntime:
             on_started=self.child_started,
             on_exited=self.child_exited,
             stop_timeout=self.stop_timeout,
+            writable=writable,
         ).start()
 
     def poll_controls(self) -> None:
@@ -253,7 +261,7 @@ class TaskRuntime:
                 raise HardStopRequested
             code = child.poll()
             if code is not None:
-                return code
+                return child.wait()
             time.sleep(self.poll_interval)
 
     def finish(
@@ -270,6 +278,7 @@ class TaskRuntime:
         )
 
     def close(self) -> None:
+        self.sunset_score.close()
         self.terminate_all()
         for handler in list(self._logger.handlers):
             handler.flush()

@@ -3,23 +3,16 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 
 from timelapse_manager.errors import ConfigError, TaskError
-from timelapse_manager.maintenance import check_disk_space, cleanup_work_directory
 from timelapse_manager.runtime import HardStopRequested, TaskRuntime
-
-
-@dataclass(frozen=True)
-class WorkSpec:
-    label: str
-    work_dir: Path
-    start_date: str
-    start_at: str
-    end_date: str
-    end_at: str
+from timelapse_manager.workflows.scheduled_support import (
+    ScheduledFinisher,
+    WorkSpec,
+    bracket_output_handler,
+    camera_output_handler,
+)
 
 
 class ScheduledWorkflow:
@@ -27,6 +20,7 @@ class ScheduledWorkflow:
         self.runtime = runtime
         self.task = runtime.task
         self.project = runtime.project
+        self.finisher = ScheduledFinisher(runtime)
 
     def run(self) -> None:
         spec = self._work_spec()
@@ -40,9 +34,7 @@ class ScheduledWorkflow:
             start = datetime.fromisoformat(
                 f"{capture['start_date']}T{capture['start_at']}"
             )
-            end = datetime.fromisoformat(
-                f"{capture['end_date']}T{capture['end_at']}"
-            )
+            end = datetime.fromisoformat(f"{capture['end_date']}T{capture['end_at']}")
         except (TypeError, ValueError) as exc:
             raise ConfigError(
                 "手动任务日期必须是 YYYY-MM-DD，时间必须是 HH:MM"
@@ -58,66 +50,12 @@ class ScheduledWorkflow:
             str(capture["end_at"]),
         )
 
-    def _camera_output_handler(self, spec: WorkSpec):
-        capture_started = False
-        capture_ended = False
-
-        def handle(line: str) -> None:
-            nonlocal capture_started, capture_ended
-            if "Starting capture round " in line and not capture_started:
-                capture_started = True
-                self.runtime.set_phase(
-                    "正在拍摄", f"{spec.label}任务已进入实际拍摄阶段"
-                )
-                self.runtime.notify_async(
-                    "entered_key_node",
-                    f"camera-timelapse 真正开始拍摄，日期 {spec.start_date}，目录 {spec.work_dir}",
-                )
-            if (
-                "Scheduled end time " in line
-                and "reached; stopping after this round" in line
-            ):
-                if capture_started and not capture_ended:
-                    capture_ended = True
-                    self.runtime.set_phase("拍摄即将结束", "已到达计划结束时间")
-                    self.runtime.notify_async(
-                        "exited_key_node",
-                        f"camera-timelapse 已按计划结束，目录 {spec.work_dir}",
-                    )
-
-        return handle
-
-    def _bracket_output_handler(self, spec: WorkSpec):
-        enfuse_started = False
-        deflick_started = False
-
-        def handle(line: str) -> None:
-            nonlocal enfuse_started, deflick_started
-            if "Fusing " in line and not enfuse_started:
-                enfuse_started = True
-                self.runtime.set_phase("HDR 融合", str(spec.work_dir))
-                self.runtime.notify_async(
-                    "entered_key_node", f"enfuse 开始融合，目录 {spec.work_dir}"
-                )
-            if "Deflickering fused frames." in line and not deflick_started:
-                deflick_started = True
-                self.runtime.set_phase("去闪处理", str(spec.work_dir))
-                self.runtime.notify_async(
-                    "entered_key_node",
-                    f"simple-deflicker 开始去闪，目录 {spec.work_dir}",
-                )
-            if "Creating video from " in line or line.rstrip().endswith("Done."):
-                self.runtime.set_phase("视频导出", str(spec.work_dir))
-
-        return handle
-
     def _run_once(self, spec: WorkSpec) -> bool:
         spec.work_dir.mkdir(parents=True, exist_ok=True)
         interval = self.task["capture"].get("interval_seconds")
         if interval is None:
             interval = self.project["capture_interval_seconds"]
         processing_enabled = bool(self.task["processing"].get("enabled", True))
-        standby = None
         self.runtime.set_phase(
             "守护拍摄计划",
             f"{spec.label} {spec.start_date} {spec.start_at}-{spec.end_date} {spec.end_at}",
@@ -131,6 +69,12 @@ class ScheduledWorkflow:
             "BRACKLAPSE_RUN_START_AT": spec.start_at,
             "BRACKLAPSE_RUN_END_AT": spec.end_at,
         }
+        score_session = (
+            self.runtime.sunset_score.start_stream(spec.work_dir, spec.score_label)
+            if processing_enabled
+            else None
+        )
+        standby = None
         if processing_enabled:
             standby_argv = self.runtime.bracket_command + [
                 "--standby",
@@ -143,7 +87,9 @@ class ScheduledWorkflow:
                 standby_argv,
                 cwd=spec.work_dir,
                 extra_env=env,
-                on_line=self._bracket_output_handler(spec),
+                on_line=bracket_output_handler(
+                    self.runtime, spec, score_session.scan if score_session else None
+                ),
             )
             probe_seconds = float(self.project["runtime"]["startup_probe_seconds"])
             deadline = time.monotonic() + probe_seconds
@@ -154,7 +100,7 @@ class ScheduledWorkflow:
                 code = standby.poll()
                 if code is not None:
                     self.runtime.log(f"Bracketlapse standby 启动失败，退出码={code}")
-                    return self._finish(spec, False)
+                    return self.finisher.finish(spec, False, score_session)
                 time.sleep(self.runtime.poll_interval)
 
         camera_argv = self.runtime.camera_command + [
@@ -175,7 +121,7 @@ class ScheduledWorkflow:
             camera_argv,
             cwd=spec.work_dir,
             extra_env={"PYTHONUNBUFFERED": "1"},
-            on_line=self._camera_output_handler(spec),
+            on_line=camera_output_handler(self.runtime, spec),
         )
         self.runtime.notify_async(
             "camera_process_started", f"camera-timelapse 已启动，目录 {spec.work_dir}"
@@ -185,7 +131,7 @@ class ScheduledWorkflow:
             self.runtime.poll_controls()
             if self.runtime.hard_stop.is_set():
                 camera.terminate()
-                if standby:
+                if standby is not None:
                     standby.terminate()
                 raise HardStopRequested
             if self.runtime.finish_now.is_set() and camera.poll() is None:
@@ -200,7 +146,7 @@ class ScheduledWorkflow:
         success = camera_code == 0 or early
         if not success:
             self.runtime.log(f"camera-timelapse 异常退出，退出码={camera_code}")
-            if standby:
+            if standby is not None:
                 standby.terminate()
         elif processing_enabled and early:
             assert standby is not None
@@ -214,68 +160,13 @@ class ScheduledWorkflow:
                 merge_argv,
                 cwd=spec.work_dir,
                 extra_env=env,
-                on_line=self._bracket_output_handler(spec),
+                on_line=bracket_output_handler(
+                    self.runtime, spec, score_session.scan if score_session else None
+                ),
             )
-
         if processing_enabled and success:
             assert standby is not None
             self.runtime.set_phase("等待后期处理", str(spec.work_dir))
             code = self.runtime.wait_child(standby)
             success = code == 0
-        return self._finish(spec, success)
-
-    def _finish(self, spec: WorkSpec, success: bool) -> bool:
-        score_decision = None
-        score_attempted = False
-        protect_hdr = False
-        if success and self.task["processing"].get("enabled", True):
-            score_attempted = self.runtime.sunset_score.enabled
-            protect_hdr = score_attempted
-            try:
-                score_decision = self.runtime.sunset_score.process(
-                    spec.work_dir,
-                    (
-                        f"{spec.label}延时摄影，日期 {spec.start_date}，"
-                        f"时间 {spec.start_at}-{spec.end_at}"
-                    ),
-                )
-            except TaskError as exc:
-                self.runtime.log(f"{spec.label}延时摄影晚霞评分失败: {exc}")
-                success = False
-            else:
-                if score_decision is not None:
-                    protect_hdr = score_decision.retained_hdr
-
-        cleanup = self.task["cleanup"]
-        if cleanup.get("enabled") and (success or cleanup.get("on_failure")):
-            try:
-                keep_directories = list(cleanup["keep_directories"])
-                if protect_hdr and "hdr_enfuse" not in keep_directories:
-                    keep_directories.append("hdr_enfuse")
-                cleanup_work_directory(
-                    spec.work_dir,
-                    keep_directories,
-                    self.runtime.log,
-                    protected_paths=[self.runtime.paths.root, self.runtime.auto_root],
-                )
-            except (OSError, TaskError) as exc:
-                self.runtime.log(f"清理工作目录失败: {exc}")
-                success = False
-        threshold = float(self.project["disk_space_warning_threshold_gb"])
-        remaining = check_disk_space(spec.work_dir, threshold, self.runtime.log)
-        if threshold > 0 and remaining < threshold:
-            self.runtime.notify_async(
-                "disk_space_warning",
-                f"磁盘剩余 {remaining:.2f}GB，低于阈值 {threshold:g}GB",
-            )
-        if success and score_decision is None and not score_attempted:
-            self.runtime.webhook.notify_image(
-                "webhook-image",
-                f"图片推送：{spec.label}延时摄影，日期 {spec.start_date}，时间 {spec.start_at}-{spec.end_at}",
-                spec.work_dir,
-            )
-        self.runtime.notify_async(
-            "ended",
-            f"任务{'完成' if success else '失败'}：{spec.label}，目录 {spec.work_dir}",
-        )
-        return success
+        return self.finisher.finish(spec, success, score_session)

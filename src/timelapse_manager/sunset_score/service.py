@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
+import threading
 from typing import TYPE_CHECKING
 
-from timelapse_manager.errors import ProcessError, TaskError
+from timelapse_manager.errors import ProcessError
 from timelapse_manager.sunset_score.availability import (
     SunsetScoreAvailability,
     detect_sunset_score,
@@ -15,12 +15,15 @@ from timelapse_manager.sunset_score.cache import (
     CacheMismatchError,
     validate_score_inventory,
 )
+from timelapse_manager.sunset_score.decision import apply_score_result, fail_score
+from timelapse_manager.sunset_score.jsonl_client import SunsetScoreJsonlClient
 from timelapse_manager.sunset_score.models import SunsetScoreDecision
 from timelapse_manager.sunset_score.score_file import (
     SCORE_FILENAME,
     ScoreFileError,
     read_score_file,
 )
+from timelapse_manager.sunset_score.streaming import StreamingScoreSession
 
 if TYPE_CHECKING:
     from timelapse_manager.runtime import TaskRuntime
@@ -41,11 +44,36 @@ class SunsetScoreService:
             self.availability = detect_sunset_score(command_value)
         else:
             self.availability = SunsetScoreAvailability(reason="任务未启用后期处理")
+        self._session_lock = threading.Lock()
+        self._session_sequence = 0
+        self._client = None
+        if self.availability.enabled:
+            assert self.availability.version is not None
+            self._client = SunsetScoreJsonlClient(
+                runtime,
+                self.availability.command,
+                interval=interval,
+                application_version=self.availability.version,
+            )
         self._log_availability()
 
     @property
     def enabled(self) -> bool:
         return self.availability.enabled
+
+    def start_stream(self, work_dir: Path, label: str) -> StreamingScoreSession | None:
+        if not self.enabled or self._client is None:
+            return None
+        with self._session_lock:
+            self._session_sequence += 1
+            session_id = f"{self.runtime.task_id}-{self._session_sequence}"
+        return StreamingScoreSession(
+            self, self._client, session_id, work_dir, label
+        )
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._client.close()
 
     def process(self, work_dir: Path, label: str) -> SunsetScoreDecision | None:
         if not self.enabled:
@@ -108,36 +136,35 @@ class SunsetScoreService:
 
         assert result is not None
         assert highest_path is not None
-        if result.failed_count and not result.has_sunset:
-            self._fail(
-                label,
-                f"{result.failed_count} 张采样照片评分失败且未检测到晚霞，结果不足以安全删图",
-            )
-
-        action = "保留 hdr_enfuse" if result.has_sunset else "删除 hdr_enfuse"
-        summary = self._summary(label, hdr_dir, result, action)
-        self.runtime.log(summary)
-        self.runtime.webhook.notify("sunset-score-result", summary)
-        highest = result.highest
-        self.runtime.webhook.notify_image_path(
-            "sunset-score-image",
-            (
-                f"晚霞评分最高分照片：{label}；文件 {highest.photo}；"
-                f"评分 {highest.score}/5；理由：{highest.reason}"
-            ),
-            highest_path,
-            work_dir,
+        return apply_score_result(
+            self.runtime, work_dir, label, hdr_dir, result, highest_path
         )
 
-        if result.has_sunset:
-            self.runtime.log(f"检测到晚霞，保留 HDR 照片目录：{hdr_dir}")
-        else:
-            try:
-                shutil.rmtree(hdr_dir)
-            except OSError as exc:
-                raise TaskError(f"无法删除无晚霞 HDR 目录 {hdr_dir}：{exc}") from exc
-            self.runtime.log(f"未检测到晚霞，已删除 HDR 照片目录：{hdr_dir}")
-        return SunsetScoreDecision(result, highest_path, result.has_sunset)
+    def apply_score_file(
+        self, work_dir: Path, label: str, score_path: Path
+    ) -> SunsetScoreDecision:
+        hdr_dir = work_dir / "hdr_enfuse"
+        expected = hdr_dir / SCORE_FILENAME
+        if score_path.expanduser().resolve() != expected.resolve():
+            self._fail(label, f"SunsetScore 返回了意外评分文件路径：{score_path}")
+        try:
+            result = read_score_file(expected)
+        except ScoreFileError as exc:
+            self._fail(label, str(exc))
+        assert self.availability.version is not None
+        try:
+            highest_path = validate_score_inventory(
+                result,
+                hdr_dir,
+                interval=self.interval,
+                application_version=self.availability.version,
+                require_retry_safe=False,
+            )
+        except CacheMismatchError as exc:
+            self._fail(label, str(exc))
+        return apply_score_result(
+            self.runtime, work_dir, label, hdr_dir, result, highest_path
+        )
 
     def _log_availability(self) -> None:
         if self.enabled:
@@ -149,28 +176,4 @@ class SunsetScoreService:
             self.runtime.log(f"晚霞评分未启用：{self.availability.reason}")
 
     def _fail(self, label: str, reason: str) -> None:
-        message = f"晚霞评分失败：{label}；{reason}；已保留 HDR 照片"
-        self.runtime.log(message)
-        self.runtime.webhook.notify("sunset-score-result", message)
-        raise TaskError(reason)
-
-    @staticmethod
-    def _summary(label: str, hdr_dir: Path, result, action: str) -> str:
-        ranges = (
-            "-"
-            if not result.sunset_ranges
-            else "；".join(
-                item.start_photo
-                if item.start_photo == item.end_photo
-                else f"{item.start_photo} 至 {item.end_photo}"
-                for item in result.sunset_ranges
-            )
-        )
-        return (
-            f"晚霞评分结果：{label}；目录 {hdr_dir}；照片 {result.image_count} 张；"
-            f"采样间隔 {result.interval}；采样 {result.sampled_count} 张"
-            f"（成功 {result.successful_count}，失败 {result.failed_count}）；"
-            f"平均分 {result.average_score:.2f}；最高分 {result.max_score}/5；"
-            f"检测到晚霞：{'是' if result.has_sunset else '否'}；"
-            f"晚霞区间：{ranges}；处理动作：{action}"
-        )
+        fail_score(self.runtime, label, reason)

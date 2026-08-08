@@ -1,100 +1,131 @@
-"""Inspect the managed resources used by SunsetScore 0.9.x."""
+"""Consume SunsetScore's public managed-resource status command."""
 
 from __future__ import annotations
 
 import json
-import os
-import sys
-from pathlib import Path
+import subprocess
+from dataclasses import dataclass
+from typing import Callable
+
+from timelapse_manager.sunset_score.availability import (
+    SunsetScoreAvailability,
+    detect_sunset_score,
+)
 
 
-LLAMA_RELEASE = "b10040"
-MODEL_NAME = "Qwen3VL-2B-Instruct-Q4_K_M.gguf"
-MODEL_SIZE = 1_107_409_952
-PROJECTOR_NAME = "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf"
-PROJECTOR_SIZE = 445_053_216
+RESOURCE_IDS = {
+    "runtime": "sunset_runtime",
+    "model": "sunset_model",
+    "projector": "sunset_projector",
+}
+VALID_STATES = {"ready", "missing", "issue"}
 
 
-def sunset_data_home() -> Path:
-    override = os.environ.get("SUNSETSCORE_HOME")
-    if override:
-        return Path(override).expanduser().resolve()
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "SunsetScore"
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA")
-        return (
-            Path(base) / "SunsetScore"
-            if base
-            else Path.home() / "AppData" / "Local" / "SunsetScore"
-        )
-    base = os.environ.get("XDG_DATA_HOME")
-    return (
-        Path(base).expanduser() / "SunsetScore"
-        if base
-        else Path.home() / ".local" / "share" / "SunsetScore"
+@dataclass(frozen=True)
+class SunsetResourceSnapshot:
+    command: tuple[str, ...]
+    statuses: dict[str, tuple[str, str]]
+    artifacts: tuple[tuple[str, int], ...] = ()
+
+
+RunCommand = Callable[..., subprocess.CompletedProcess[str]]
+
+
+def inspect_sunset_resources(
+    value: str | SunsetScoreAvailability,
+    *,
+    run: RunCommand = subprocess.run,
+) -> dict[str, tuple[str, str]]:
+    return query_sunset_resources(value, run=run).statuses
+
+
+def query_sunset_resources(
+    value: str | SunsetScoreAvailability,
+    *,
+    run: RunCommand = subprocess.run,
+) -> SunsetResourceSnapshot:
+    availability = (
+        value if isinstance(value, SunsetScoreAvailability) else detect_sunset_score(value)
     )
-
-
-def inspect_sunset_resources() -> dict[str, tuple[str, str]]:
-    home = sunset_data_home()
-    return {
-        "sunset_runtime": _runtime_status(home),
-        "sunset_model": _artifact_status(home / "models" / MODEL_NAME, MODEL_SIZE),
-        "sunset_projector": _artifact_status(
-            home / "models" / PROJECTOR_NAME, PROJECTOR_SIZE
-        ),
-    }
-
-
-def _artifact_status(path: Path, expected_size: int) -> tuple[str, str]:
+    if not availability.enabled:
+        state = "issue" if availability.command else "missing"
+        return _failed_snapshot(state, availability.reason)
     try:
-        size = path.stat().st_size
-    except OSError:
-        return "missing", f"尚未下载 · {path}"
-    if size != expected_size:
-        return (
-            "issue",
-            f"文件不完整（{_format_size(size)} / {_format_size(expected_size)}）",
+        completed = run(
+            [*availability.command, "runtime", "status", "--json"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+            check=False,
         )
-    return "ready", f"已下载 {_format_size(size)} · {path}"
-
-
-def _runtime_status(home: Path) -> tuple[str, str]:
-    runtime_root = home / "runtime"
-    valid: list[tuple[str, Path]] = []
+    except subprocess.TimeoutExpired:
+        return _failed_snapshot(
+            "issue", "SunsetScore 资源状态检查超时", availability.command
+        )
+    except OSError as exc:
+        return _failed_snapshot(
+            "issue", f"SunsetScore 资源状态检查失败：{exc}", availability.command
+        )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        return _failed_snapshot(
+            "issue",
+            f"SunsetScore 资源状态命令失败：{detail or completed.returncode}",
+            availability.command,
+        )
     try:
-        candidates = tuple(runtime_root.glob(f"{LLAMA_RELEASE}-*"))
-    except OSError:
-        candidates = ()
-    for candidate in candidates:
-        marker = candidate / ".installed.json"
-        try:
-            document = json.loads(marker.read_text(encoding="utf-8"))
-            relative = Path(document["executable"])
-            if relative.is_absolute() or ".." in relative.parts:
-                continue
-            executable = candidate / relative
-            server_name = (
-                "llama-server.exe"
-                if executable.suffix.lower() == ".exe"
-                else "llama-server"
-            )
-            if document.get("release") != LLAMA_RELEASE:
-                continue
-            if executable.is_file() and executable.with_name(server_name).is_file():
-                valid.append((str(document.get("backend", "cpu")).upper(), candidate))
-        except (OSError, KeyError, TypeError, json.JSONDecodeError):
-            continue
-    if valid:
-        backends = ", ".join(sorted({backend for backend, _path in valid}))
-        return "ready", f"{LLAMA_RELEASE} · {backends} · {valid[0][1]}"
-    if candidates:
-        return "issue", f"发现不完整的运行时 · {runtime_root}"
-    return "missing", f"尚未准备 · {runtime_root}"
+        document = json.loads(completed.stdout)
+        statuses, artifacts = _parse_document(document, availability.version)
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        return _failed_snapshot(
+            "issue", f"SunsetScore 资源状态无效：{exc}", availability.command
+        )
+    return SunsetResourceSnapshot(availability.command, statuses, artifacts)
 
 
-def _format_size(size: int) -> str:
-    if size >= 1024**3:
-        return f"{size / 1024**3:.2f} GB"
-    return f"{size / 1024**2:.0f} MB"
+def _parse_document(
+    document: object,
+    application_version: str | None,
+) -> tuple[dict[str, tuple[str, str]], tuple[tuple[str, int], ...]]:
+    if not isinstance(document, dict) or not isinstance(document.get("resources"), dict):
+        raise ValueError("缺少 resources 对象")
+    if document.get("application_version") != application_version:
+        raise ValueError("application_version 与版本探测结果不一致")
+    resources = document["resources"]
+    statuses = {}
+    artifacts = []
+    for public_id, manager_id in RESOURCE_IDS.items():
+        item = resources.get(public_id)
+        if not isinstance(item, dict):
+            raise ValueError(f"缺少资源 {public_id}")
+        state = item.get("state")
+        detail = item.get("detail")
+        if state not in VALID_STATES or not isinstance(detail, str) or not detail:
+            raise ValueError(f"资源 {public_id} 的状态无效")
+        statuses[manager_id] = (state, detail)
+        artifact = item.get("artifact")
+        if artifact is not None:
+            artifacts.append(_parse_artifact(artifact, public_id))
+    return statuses, tuple(artifacts)
+
+
+def _parse_artifact(value: object, resource_id: str) -> tuple[str, int]:
+    if not isinstance(value, dict):
+        raise ValueError(f"资源 {resource_id} 的 artifact 无效")
+    filename = value.get("filename")
+    size = value.get("size")
+    if not isinstance(filename, str) or not filename or type(size) is not int or size < 1:
+        raise ValueError(f"资源 {resource_id} 的 artifact 无效")
+    return filename, size
+
+
+def _failed_snapshot(
+    state: str, detail: str, command: tuple[str, ...] = ()
+) -> SunsetResourceSnapshot:
+    statuses = {
+        manager_id: (state, detail or "SunsetScore 不可用")
+        for manager_id in RESOURCE_IDS.values()
+    }
+    return SunsetResourceSnapshot(command, statuses)

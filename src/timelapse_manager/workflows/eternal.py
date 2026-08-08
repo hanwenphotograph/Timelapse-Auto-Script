@@ -20,9 +20,9 @@ from timelapse_manager.io_utils import (
     save_json,
     save_yaml,
 )
-from timelapse_manager.maintenance import check_disk_space, cleanup_work_directory
 from timelapse_manager.process_utils import process_identity, process_matches
 from timelapse_manager.runtime import HardStopRequested, TaskRuntime
+from timelapse_manager.workflows.eternal_processing import EternalBatchProcessor
 
 
 GROUP_PATTERN = re.compile(r"^(\d+)_")
@@ -65,6 +65,9 @@ class EternalWorkflow:
         self._processor: threading.Thread | None = None
         self._processor_failures: list[str] = []
         self._batches_dispatched = 0
+        self._batch_processor = EternalBatchProcessor(
+            runtime, self.state_dir, self.capture_dir
+        )
 
     def run(self) -> None:
         initialized = False
@@ -479,7 +482,7 @@ class EternalWorkflow:
             marker = markers[0]
             try:
                 data = load_yaml(marker)
-                success = self._process_batch(marker, data)
+                success = self._batch_processor.process(data)
             except Exception as exc:
                 success = False
                 self.runtime.log(f"永续批次标记处理失败 {marker}: {exc}")
@@ -496,104 +499,6 @@ class EternalWorkflow:
                 except OSError:
                     pass
                 self._processor_failures.append(marker.name)
-
-    def _bracket_output_handler(self, batch_dir: Path):
-        def handle(line: str) -> None:
-            if "Fusing " in line:
-                self.runtime.set_phase("永续批次 HDR 融合", str(batch_dir))
-            elif "Deflickering fused frames." in line:
-                self.runtime.set_phase("永续批次去闪", str(batch_dir))
-            elif "Creating video from " in line:
-                self.runtime.set_phase("永续批次视频导出", str(batch_dir))
-
-        return handle
-
-    def _process_batch(self, marker: Path, data: dict[str, Any]) -> bool:
-        sequence = int(data["sequence"])
-        batch_dir = Path(str(data["batch_dir"]))
-        self.runtime.set_phase("永续批次后期处理", f"批次 {sequence}，目录 {batch_dir}")
-        if not self.task["processing"].get("enabled", True):
-            self.runtime.log(f"永续批次 {sequence} 已归档，任务配置为不执行后期处理")
-            return True
-        self.runtime.notify_async(
-            "entered_key_node",
-            f"永续批次 {sequence} 开始 Bracketlapse 处理，目录 {batch_dir}",
-        )
-        env = {
-            "BRACKLAPSE_RUN_DATE": str(data["work_date"]),
-            "BRACKLAPSE_RUN_START_AT": str(data["start_at"]),
-            "BRACKLAPSE_RUN_END_AT": str(data["end_at"]),
-        }
-        child = self.runtime.spawn(
-            f"bracketlapse-batch-{sequence}",
-            self.runtime.bracket_command + [str(batch_dir), "--merge-subdirs"],
-            cwd=batch_dir,
-            extra_env=env,
-            on_line=self._bracket_output_handler(batch_dir),
-        )
-        while child.poll() is None:
-            if self.runtime.hard_stop.is_set():
-                child.terminate()
-                return False
-            time.sleep(self.runtime.poll_interval)
-        code = child.poll()
-        if code != 0:
-            self.runtime.log(f"永续批次 {sequence} 处理失败，退出码={code}")
-            return False
-        score_decision = None
-        score_attempted = self.runtime.sunset_score.enabled
-        try:
-            score_decision = self.runtime.sunset_score.process(
-                batch_dir,
-                (
-                    f"永续批次 {sequence}，日期 {data['work_date']}，"
-                    f"时间 {data['start_at']}-{data['end_at']}"
-                ),
-            )
-        except TaskError as exc:
-            self.runtime.log(f"永续批次 {sequence} 晚霞评分失败: {exc}")
-            return False
-        if score_decision is None and not score_attempted:
-            self.runtime.webhook.notify_image(
-                "webhook-image",
-                f"图片推送：永续批次 {sequence}，日期 {data['work_date']}，时间 {data['start_at']}-{data['end_at']}",
-                batch_dir,
-            )
-        cleanup = self.task["cleanup"]
-        if cleanup.get("enabled"):
-            try:
-                keep_directories = list(cleanup["keep_directories"])
-                if (
-                    score_decision is not None
-                    and score_decision.retained_hdr
-                    and "hdr_enfuse" not in keep_directories
-                ):
-                    keep_directories.append("hdr_enfuse")
-                cleanup_work_directory(
-                    batch_dir,
-                    keep_directories,
-                    self.runtime.log,
-                    protected_paths=[
-                        self.runtime.paths.root,
-                        self.runtime.auto_root,
-                        self.state_dir,
-                        self.capture_dir,
-                    ],
-                )
-            except (OSError, TaskError) as exc:
-                self.runtime.log(f"永续批次 {sequence} 清理失败: {exc}")
-                return False
-        threshold = float(self.runtime.project["disk_space_warning_threshold_gb"])
-        remaining = check_disk_space(batch_dir, threshold, self.runtime.log)
-        if threshold > 0 and remaining < threshold:
-            self.runtime.notify_async(
-                "disk_space_warning",
-                f"磁盘剩余 {remaining:.2f}GB，低于阈值 {threshold:g}GB",
-            )
-        self.runtime.notify_async(
-            "ended", f"永续批次 {sequence} 已完成处理、导出和清理，目录 {batch_dir}"
-        )
-        return True
 
     def _finish_gracefully(self) -> None:
         self.runtime.set_phase("整理最后批次", "正在归档剩余完整曝光组")
