@@ -135,7 +135,10 @@ def terminate_tree(pid: int, timeout: float = 10.0) -> None:
         parent = psutil.Process(pid)
     except psutil.NoSuchProcess:
         return
-    processes = parent.children(recursive=True)
+    try:
+        processes = parent.children(recursive=True)
+    except psutil.NoSuchProcess:
+        return
     processes.append(parent)
     for process in reversed(processes):
         try:

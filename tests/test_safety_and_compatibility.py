@@ -5,7 +5,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+import psutil
 
 from timelapse_manager.config import ConfigManager
 from timelapse_manager.dependency_manager.paths import DependencyPaths
@@ -16,12 +18,22 @@ from timelapse_manager.errors import ConfigError, ProcessError, TaskError
 from timelapse_manager.maintenance import cleanup_work_directory
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.presets import validate_task
-from timelapse_manager.process_utils import resolve_command
+from timelapse_manager.process_utils import resolve_command, terminate_tree
 from timelapse_manager.task_store import TaskStore
 from tests.managed_dependency_support import install_fake_native_tools
 
 
 class SafetyAndCompatibilityTests(unittest.TestCase):
+    def test_terminate_tree_accepts_parent_exit_during_child_discovery(self) -> None:
+        process = Mock()
+        process.children.side_effect = psutil.NoSuchProcess(12345)
+
+        with patch(
+            "timelapse_manager.process_utils.psutil.Process",
+            return_value=process,
+        ):
+            terminate_tree(12345)
+
     def test_cleanup_refuses_protected_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             protected = Path(temp_dir)
