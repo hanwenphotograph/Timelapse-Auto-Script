@@ -21,6 +21,7 @@ from timelapse_manager.task_store import ACTIVE_STATUSES
 from timelapse_manager.ui.dialogs import NewTaskDialog, YamlEditorDialog
 from timelapse_manager.ui.package_page import PackagePage
 from timelapse_manager.ui.progress import compact_timestamp, task_progress_label
+from timelapse_manager.ui.progress_panel import TaskProgressPanel
 from timelapse_manager.ui.table import ModernTable
 from timelapse_manager.ui.task_deletion import delete_tasks
 from timelapse_manager.ui.theme import (
@@ -98,6 +99,8 @@ class TimelapseApp:
         self._current_config_kind = "project"
         self._config_drafts: dict[str, str] = {}
         self._task_ids: list[str] = []
+        self._overview_items: dict[str, dict[str, Any]] = {}
+        self._overview_progress_task_id: str | None = None
         self._tables: list[ModernTable] = []
         self.dependency_manager = DependencyManager(
             self.service.paths.root,
@@ -337,7 +340,7 @@ class TimelapseApp:
 
     def _build_overview_page(self) -> None:
         page = self.page_frames["overview"]
-        page.grid_rowconfigure(2, weight=1)
+        page.grid_rowconfigure(3, weight=1)
         page.grid_columnconfigure(0, weight=1)
 
         cards = ctk.CTkFrame(page, fg_color="transparent")
@@ -358,8 +361,16 @@ class TimelapseApp:
                 padx=(0 if column == 0 else 6, 0 if column == 3 else 6),
             )
 
+        self.overview_progress = TaskProgressPanel(page)
+        self.overview_progress.grid(
+            row=1,
+            column=0,
+            sticky="ew",
+            pady=(16, 0),
+        )
+
         table_header = ctk.CTkFrame(page, fg_color="transparent")
-        table_header.grid(row=1, column=0, sticky="ew", pady=(24, 10))
+        table_header.grid(row=2, column=0, sticky="ew", pady=(18, 10))
         table_header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             table_header,
@@ -401,9 +412,12 @@ class TimelapseApp:
                 "started": 210,
             },
         )
-        self.overview_table.grid(row=2, column=0, sticky="nsew")
+        self.overview_table.grid(row=3, column=0, sticky="nsew")
         self.overview_table.tree.bind(
             "<Double-1>", lambda _event: self._open_overview_task()
+        )
+        self.overview_table.tree.bind(
+            "<<TreeviewSelect>>", lambda _event: self._overview_selection_changed()
         )
         self._tables.append(self.overview_table)
 
@@ -806,6 +820,21 @@ class TimelapseApp:
             self.task_table.tree.see(task_id)
             self._selection_changed()
 
+    def _overview_selection_changed(self) -> None:
+        self._show_overview_progress(self.overview_table.selected_id())
+
+    def _show_overview_progress(self, task_id: str | None) -> None:
+        item = self._overview_items.get(task_id or "")
+        panel = getattr(self, "overview_progress", None)
+        if item is None:
+            self._overview_progress_task_id = None
+            if panel is not None:
+                panel.clear()
+            return
+        self._overview_progress_task_id = task_id
+        if panel is not None:
+            panel.show_task(item["task"], item["state"])
+
     def _require_task(self) -> str | None:
         task_ids = self._selected_task_ids()
         if len(task_ids) == 1:
@@ -944,6 +973,7 @@ class TimelapseApp:
         self.task_table.clear()
         self.overview_table.clear()
         self._task_ids = []
+        self._overview_items = {}
         for item in items:
             task = item["task"]
             state = item["state"]
@@ -951,6 +981,7 @@ class TimelapseApp:
             status = str(state.get("status", "idle"))
             tag = (status,) if status in STATUS_TEXT else ()
             self._task_ids.append(task_id)
+            self._overview_items[task_id] = item
             common_values = (
                 task.get("name", ""),
                 task.get("preset", ""),
@@ -978,6 +1009,20 @@ class TimelapseApp:
                 values=overview_values,
                 tags=tag,
             )
+
+        progress_task_id = getattr(self, "_overview_progress_task_id", None)
+        if progress_task_id not in self._overview_items:
+            progress_task_id = next(
+                (
+                    item["task"]["id"]
+                    for item in items
+                    if item["state"].get("status") in ACTIVE_STATUSES
+                ),
+                self._task_ids[0] if self._task_ids else None,
+            )
+        if progress_task_id is not None:
+            self.overview_table.tree.selection_set(progress_task_id)
+        self._show_overview_progress(progress_task_id)
 
         restored_selection = tuple(
             task_id for task_id in old_selection if self.task_table.tree.exists(task_id)

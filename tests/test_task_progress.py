@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 from datetime import datetime
 
-from timelapse_manager.ui.progress import compact_timestamp, task_progress_label
+from timelapse_manager.ui.progress import (
+    compact_timestamp,
+    task_progress_items,
+    task_progress_label,
+)
 
 
 class TaskProgressTests(unittest.TestCase):
@@ -42,6 +46,94 @@ class TaskProgressTests(unittest.TestCase):
 
         self.assertIn("25%", label)
         self.assertNotIn("·", label)
+        self.assertNotIn("█", label)
+
+    def test_progress_items_start_with_overall_then_each_child(self) -> None:
+        items = task_progress_items(
+            self.task,
+            {
+                "status": "running",
+                "phase": "视频导出",
+                "children": [
+                    {
+                        "role": "camera-timelapse",
+                        "pid": 101,
+                        "status": "running",
+                    },
+                    {
+                        "role": "bracketlapse-standby",
+                        "pid": 102,
+                        "status": "completed",
+                    },
+                ],
+            },
+            now=datetime(2026, 7, 22, 17),
+        )
+
+        self.assertEqual(
+            [item.key for item in items],
+            ["overall", "children-101", "children-102"],
+        )
+        self.assertEqual(items[0].label, "总体进度")
+        self.assertAlmostEqual(items[0].value or 0, 0.25)
+        self.assertAlmostEqual(items[1].value or 0, 0.25)
+        self.assertEqual(items[2].value, 1.0)
+
+    def test_unknown_running_subtask_uses_indeterminate_progress(self) -> None:
+        items = task_progress_items(
+            {"preset": "eternal"},
+            {
+                "status": "running",
+                "phase": "永续拍摄中",
+                "threads": {
+                    "archive": {
+                        "status": "running",
+                        "phase": "等待归档批次",
+                    }
+                },
+            },
+        )
+
+        self.assertIsNone(items[0].value)
+        self.assertIsNone(items[1].value)
+        self.assertEqual(items[1].label, "归档")
+
+    def test_nested_subtask_progress_is_normalized(self) -> None:
+        items = task_progress_items(
+            {"preset": "eternal"},
+            {
+                "status": "running",
+                "progress": {
+                    "subtasks": {
+                        "processor": {
+                            "status": "running",
+                            "progress": {"completed": 2, "total": 5},
+                        }
+                    }
+                },
+            },
+        )
+
+        self.assertAlmostEqual(items[1].value or 0, 0.4)
+
+    def test_active_task_after_capture_window_is_not_reported_as_complete(self) -> None:
+        state = {"status": "running", "phase": "等待后期处理"}
+
+        items = task_progress_items(
+            self.task,
+            state,
+            now=datetime(2026, 7, 22, 20, 10),
+        )
+
+        self.assertIsNone(items[0].value)
+        self.assertEqual(
+            task_progress_label(
+                self.task,
+                state,
+                now=datetime(2026, 7, 22, 20, 10),
+            ),
+            "等待后期处理",
+        )
 
     def test_eternal_task_reports_recorded_queue_progress(self) -> None:
         label = task_progress_label(
@@ -57,7 +149,9 @@ class TaskProgressTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(label, "持续运行 · 已归档 3 批 · 待归档 2 组 · 归档中 1 批 · 待处理 4 批")
+        self.assertEqual(
+            label, "持续运行 · 已归档 3 批 · 待归档 2 组 · 归档中 1 批 · 待处理 4 批"
+        )
 
     def test_terminal_task_uses_terminal_status(self) -> None:
         self.assertEqual(
