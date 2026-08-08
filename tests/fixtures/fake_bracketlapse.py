@@ -37,7 +37,7 @@ def main() -> int:
         return 0
     if args and args[0] == "--standby":
         work_dir = Path(args[1])
-        quiet_seconds = min(float(args[3]), 0.1)
+        quiet_seconds = min(float(args[3]), 0.5)
         return _run_standby(work_dir, quiet_seconds)
     work_dir = Path(args[0])
     work_dir.mkdir(parents=True, exist_ok=True)

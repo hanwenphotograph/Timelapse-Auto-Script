@@ -200,7 +200,11 @@ class ManagerService:
         if state["status"] not in ACTIVE_STATUSES:
             raise TaskError("任务当前没有运行")
         self.store.enqueue_control(task_id, action)
-        state["status"] = "stopping" if action == "stop" else "finishing"
+        waiting_for_runner = (
+            state["status"] == "starting" and state.get("runner_pid") is None
+        )
+        if not waiting_for_runner:
+            state["status"] = "stopping" if action == "stop" else "finishing"
         labels = {
             "stop": "等待强制停止",
             "finish_now": "等待提前结束拍摄并完成处理",

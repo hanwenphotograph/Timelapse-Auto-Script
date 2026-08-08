@@ -9,6 +9,7 @@ from timelapse_manager.config import ConfigManager
 from timelapse_manager.errors import ConfigError
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.presets import PRESET_DESCRIPTIONS
+from timelapse_manager.service import ManagerService
 from timelapse_manager.task_store import TaskStore
 
 
@@ -98,6 +99,25 @@ class ConfigAndStoreTests(unittest.TestCase):
 
         self.assertEqual(reconciled["status"], "completed")
         self.assertEqual(store.read_state(task["id"])["status"], "completed")
+
+    def test_startup_control_waits_for_runner_before_changing_status(self) -> None:
+        service = ManagerService(self.root)
+        task = service.create_task("启动期控制测试", "scheduled_once")
+        state = service.store.default_state(task["id"])
+        state["status"] = "starting"
+        service.store.write_state(task["id"], state)
+
+        requested = service.request(task["id"], "finish_after_current")
+
+        self.assertEqual(requested["status"], "starting")
+        self.assertEqual(
+            service.store.read_state(task["id"], reconcile=True)["status"],
+            "starting",
+        )
+        self.assertEqual(
+            [item["action"] for item in service.store.pop_controls(task["id"])],
+            ["finish_after_current"],
+        )
 
 
 if __name__ == "__main__":
