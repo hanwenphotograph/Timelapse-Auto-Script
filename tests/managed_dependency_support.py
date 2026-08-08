@@ -10,10 +10,10 @@ def install_fake_native_tools(root: Path) -> DependencyPaths:
     paths = DependencyPaths.discover(root)
     paths.ensure_layout()
     for name in ("gphoto2", "enfuse", "ffmpeg", "simple-deflicker"):
-        filename = f"{name}.exe" if os.name == "nt" else name
+        filename = f"{name}.cmd" if os.name == "nt" else name
         executable = paths.bin_dir / filename
         if os.name == "nt":
-            executable.write_bytes(b"test-placeholder")
+            executable.write_text("@echo off\nexit /b 0\n", encoding="ascii")
         else:
             executable.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")
             executable.chmod(0o755)

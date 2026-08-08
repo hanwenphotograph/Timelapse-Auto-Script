@@ -84,7 +84,9 @@ def resolve_command(
 
 
 def _managed_executable(name: str, dependencies: DependencyPaths) -> Path | None:
-    names = (name, f"{name}.exe") if os.name == "nt" else (name,)
+    names = (name,)
+    if os.name == "nt" and not Path(name).suffix:
+        names += tuple(f"{name}{suffix}" for suffix in (".exe", ".cmd", ".bat"))
     for directory in dependencies.command_directories():
         for candidate_name in names:
             candidate = directory / candidate_name

@@ -115,9 +115,10 @@ class TaskProgressFilteringTests(unittest.TestCase):
         )
 
     def test_compact_timestamp_and_terminal_table_labels(self) -> None:
+        source = "2026-07-22T11:09:04+08:00"
         self.assertEqual(
-            compact_timestamp("2026-07-22T11:09:04+08:00"),
-            "2026-07-22 11:09",
+            compact_timestamp(source),
+            datetime.fromisoformat(source).astimezone().strftime("%Y-%m-%d %H:%M"),
         )
         self.assertEqual(
             task_progress_label(MANUAL_TASK, {"status": "completed"}),

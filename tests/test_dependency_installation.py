@@ -91,7 +91,11 @@ class DependencyInstallationTests(unittest.TestCase):
     def test_formula_install_plans_force_private_bottles(self) -> None:
         installer = DependencyInstaller(Path.cwd())
 
-        gphoto = installer.plan("system:gphoto2", {})
+        with patch(
+            "timelapse_manager.dependency_manager.system_install.platform.system",
+            return_value="Darwin",
+        ):
+            gphoto = installer.plan("system:gphoto2", {})
         deflicker = installer.plan("tool:simple-deflicker", {})
 
         assert gphoto is not None
