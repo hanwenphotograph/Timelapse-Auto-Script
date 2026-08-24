@@ -162,6 +162,18 @@ class SafetyAndCompatibilityTests(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, "不能覆盖私有依赖环境"):
                 validate_task(task)
 
+    def test_processing_group_size_must_be_an_integer_at_least_two(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = ConfigManager(AppPaths.discover(Path(temp_dir)))
+            manager.ensure()
+            task = TaskStore(manager.load()).create("动态曝光组", "manual")
+
+            for invalid in (True, 1, 3.0, "3"):
+                with self.subTest(group_size=invalid):
+                    task["processing"]["group_size"] = invalid
+                    with self.assertRaisesRegex(ConfigError, "processing.group_size"):
+                        validate_task(task)
+
     def test_legacy_environment_aliases_are_applied(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = ConfigManager(AppPaths.discover(Path(temp_dir)))

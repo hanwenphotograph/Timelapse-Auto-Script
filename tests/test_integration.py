@@ -81,7 +81,7 @@ class IntegrationTests(unittest.TestCase):
         )
         output_root = self.root / "output"
         videos = list(output_root.rglob("timelapse.mp4"))
-        raw_images = list(output_root.rglob("0001_0.jpg"))
+        raw_images = list(output_root.rglob("0001_01.jpg"))
         self.assertTrue(videos)
         self.assertFalse(raw_images)
 
@@ -90,9 +90,11 @@ class IntegrationTests(unittest.TestCase):
         definition = self.service.store.load(task["id"])
         definition["environment"] = {
             "FAKE_CAMERA_ROUNDS": "30",
+            "FAKE_CAMERA_GROUP_SIZE": "4",
             "FAKE_CAMERA_DELAY": "0.03",
         }
         definition["eternal"]["batch_groups"] = 2
+        definition["eternal"]["images_per_group"] = 4
         self.service.store.save_text(task["id"], yaml_text(definition))
         self.service.start_task(task["id"])
         deadline = time.monotonic() + 5
@@ -111,6 +113,9 @@ class IntegrationTests(unittest.TestCase):
             if child["role"].startswith("bracketlapse-batch-")
         ]
         self.assertTrue(batch_children)
+        self.assertTrue(
+            all("--group-size 4" in child["command"] for child in batch_children)
+        )
         self.assertTrue(
             all(
                 child.get("progress", {}).get("stage") == "video"
@@ -139,9 +144,9 @@ class IntegrationTests(unittest.TestCase):
 
         self.assertEqual(state["status"], "failed", state)
         self.assertTrue((work_dir / "pre-capture.tmp").is_file())
-        self.assertIn("拍摄尚未开始，跳过失败清理", log)
+        self.assertIn("任务失败，跳过清理以保护工作目录", log)
 
-    def test_failure_cleanup_preserves_preexisting_top_level_content(self) -> None:
+    def test_failure_preserves_preexisting_content_and_captured_photos(self) -> None:
         task = self.service.create_task("保护既有内容", "scheduled_once")
         definition = self.service.store.load(task["id"])
         definition["processing"]["enabled"] = False
@@ -161,7 +166,42 @@ class IntegrationTests(unittest.TestCase):
 
         self.assertEqual(state["status"], "failed", state)
         self.assertEqual(existing.read_text(encoding="utf-8"), "keep")
-        self.assertFalse((work_dir / "0001_0.jpg").exists())
+        self.assertTrue((work_dir / "0001_01.jpg").exists())
+
+    def test_standby_failure_recovers_after_capture_with_dynamic_group_size(
+        self,
+    ) -> None:
+        task = self.service.create_task("HDR 恢复", "scheduled_once")
+        definition = self.service.store.load(task["id"])
+        definition["processing"]["group_size"] = 4
+        definition["environment"] = {
+            "FAKE_CAMERA_ROUNDS": "8",
+            "FAKE_CAMERA_GROUP_SIZE": "4",
+            "FAKE_CAMERA_DELAY": "0.04",
+            "FAKE_BRACKET_STANDBY_EXIT_CODE": "1",
+            "FAKE_BRACKET_STANDBY_FAIL_DELAY": "0.15",
+        }
+        self.service.store.save_text(task["id"], yaml_text(definition))
+
+        self.service.start_task(task["id"])
+        state = self.wait_terminal(task["id"])
+
+        self.assertEqual(state["status"], "completed", state)
+        standby = next(
+            child
+            for child in state["children"]
+            if child["role"] == "bracketlapse-standby"
+        )
+        recovery = next(
+            child
+            for child in state["children"]
+            if child["role"] == "bracketlapse-recovery"
+        )
+        self.assertEqual(standby["exit_code"], 1)
+        self.assertEqual(recovery["exit_code"], 0)
+        self.assertIn("--group-size 4", recovery["command"])
+        work_dir = Path(definition["capture"]["work_dir"])
+        self.assertTrue(list((work_dir / "hdr_video").glob("*.mp4")))
 
 
 if __name__ == "__main__":

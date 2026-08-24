@@ -47,6 +47,7 @@ class TaskChainTests(unittest.TestCase):
             self.assertEqual(task["capture"]["start_date"], "2026-07-21")
             self.assertEqual(task["capture"]["start_at"], "16:00")
             self.assertEqual(task["capture"]["interval_seconds"], 6)
+            self.assertFalse(task["cleanup"]["on_failure"])
         self.assertNotIn("continuation", once)
         self.assertEqual(loop["continuation"]["sequence"], 1)
         self.assertIn("黄昏 2026-07-21", loop["name"])

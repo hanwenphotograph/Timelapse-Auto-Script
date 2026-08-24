@@ -97,7 +97,7 @@ def materialize_scheduled(
         "interval_seconds": project["capture_interval_seconds"],
     }
     task["cleanup"].update(
-        {"enabled": True, "delete_incomplete_groups": True, "on_failure": True}
+        {"enabled": True, "delete_incomplete_groups": True, "on_failure": False}
     )
     if source_preset == "scheduled_loop":
         current = continuation or {}

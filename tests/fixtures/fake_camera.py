@@ -27,11 +27,14 @@ def main() -> int:
         (args.output_dir / "pre-capture.tmp").write_bytes(b"not-a-capture")
         return int(os.environ.get("FAKE_CAMERA_EXIT_CODE", "7"))
     rounds = int(os.environ.get("FAKE_CAMERA_ROUNDS", "2"))
+    group_size = int(os.environ.get("FAKE_CAMERA_GROUP_SIZE", "3"))
     delay = float(os.environ.get("FAKE_CAMERA_DELAY", "0.04"))
     for group in range(1, rounds + 1):
         print(f"Starting capture round {group}", flush=True)
-        for exposure in range(3):
-            (args.output_dir / f"{group:04d}_{exposure}.jpg").write_bytes(b"fake-jpeg")
+        for exposure in range(1, group_size + 1):
+            (args.output_dir / f"{group:04d}_{exposure:02d}.jpg").write_bytes(
+                b"fake-jpeg"
+            )
         print(f"Deleting group {group} from camera", flush=True)
         time.sleep(delay)
     if args.end_at:

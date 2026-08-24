@@ -19,6 +19,7 @@ class EternalBatchProcessor:
         state_dir: Path,
         capture_dir: Path,
         album_lock: Any,
+        group_size: int,
     ):
         self.runtime = runtime
         self.task = runtime.task
@@ -28,6 +29,7 @@ class EternalBatchProcessor:
             capture_dir,
             album_lock,
         )
+        self.group_size = group_size
 
     def process(self, data: dict[str, Any]) -> bool:
         sequence = int(data["sequence"])
@@ -126,7 +128,13 @@ class EternalBatchProcessor:
 
         child = self.runtime.spawn(
             role,
-            self.runtime.bracket_command + [str(batch_dir), "--merge-subdirs"],
+            self.runtime.bracket_command
+            + [
+                str(batch_dir),
+                "--merge-subdirs",
+                "--group-size",
+                str(self.group_size),
+            ],
             cwd=batch_dir,
             extra_env=env,
             on_line=handle,

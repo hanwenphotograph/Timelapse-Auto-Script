@@ -24,7 +24,7 @@ Timelapse Manager 是一个跨平台的延时摄影任务管理器，同时提�
 - Python 3.10 或更高版本。
 - 当前 Python 安装包含 Tk。
 - 实际拍摄需要 Camera Timelapse Controller。
-- 开启后期处理时需要 Bracketlapse 0.2.0 或更高版本。
+- 开启后期处理时需要 Bracketlapse 0.4.1 或更高版本。
 
 即使尚未安装外部工作流工具，GUI 也可以正常启动。启动后可通过“包管理”检查或安装受支持的依赖。所有工作流依赖均下载至应用目录内的 `.timelapse/dependencies/`，并从这棵私有目录运行。Manager 不会回退使用全局 `PATH`、Homebrew、`pipx` 或用户包目录中的命令，子进程只能额外访问操作系统基础工具。
 
@@ -117,7 +117,7 @@ SunsetScore 0.10.0 或更高版本可以抽样分析处理后的照片并识别�
 
 受管的日期/时间相册得到晚霞结果后，时间目录和外层日期目录都会按最高晚霞评分添加 `-Sx` 后缀。例如评分为 3 时，`1900-01-01/0300-0900/` 会改名为 `1900-01-01-S3/0300-0900-S3/`。同一日期包含多个晚霞相册时，日期目录使用所有子相册中的最高分。
 
-拍摄和后期处理采用依赖公开协议。Bracketlapse 0.2.0 或更高版本会保持一个 standby 进程，在每个完整曝光组就绪后立即融合并发出 `hdr_ready` 事件。Bracketlapse 0.4.0 或更高版本还会报告精确的 FFmpeg 帧进度；旧的受支持版本会自动降级为不定视频进度。Manager 将 HDR 事件转发给 SunsetScore 0.10.0 或更高版本的 JSONL 常驻服务，由该服务负责目录扫描、采样、聚合和评分文件写入，并在同一任务的所有帧及永续批次中复用一个模型。HDR 生产完成后再收尾去闪和视频导出，评分可以并行继续。Manager 不会探测两个依赖的内部 Python 环境，也不会复制其内部实现。
+拍摄和后期处理采用依赖公开协议。Bracketlapse 0.4.1 或更高版本会保持一个 standby 进程，并且只接受稳定、完整的最终命名组，例如从 `0001_01.jpg` 至以至少两位数字编码的第 `N` 张成员；`captXXXX.jpg` 临时文件和不完整组会被忽略。任务的 `processing.group_size` 定义 `N`，未配置时使用 `eternal.images_per_group`。如果 standby 在拍摄期间提前退出，Manager 会让相机继续运行，并在拍摄完成后使用最终照片执行覆盖恢复处理。Bracketlapse 会发出 `hdr_ready` 事件并报告精确的 FFmpeg 帧进度。Manager 将 HDR 事件转发给 SunsetScore 0.10.0 或更高版本的 JSONL 常驻服务，由该服务负责目录扫描、采样、聚合和评分文件写入，并在同一任务的所有帧及永续批次中复用一个模型。HDR 生产完成后再收尾去闪和视频导出，评分可以并行继续。Manager 不会探测两个依赖的内部 Python 环境，也不会复制其内部实现。
 
 ### 界面外观
 
@@ -127,7 +127,7 @@ SunsetScore 0.10.0 或更高版本可以抽样分析处理后的照片并识别�
 
 GUI 会自动创建 `config/auto_timelapse.yaml` 和 `config/webhook.yaml`，同目录提供了示例文件。
 
-| 项目配置字段 | 含义 |
+| 项目/任务配置字段 | 含义 |
 | --- | --- |
 | `schema_version` | 配置格式版本，通常无需修改。 |
 | `auto_root` | 定时与持续任务的基础输出目录。 |
@@ -152,6 +152,7 @@ GUI 会自动创建 `config/auto_timelapse.yaml` 和 `config/webhook.yaml`，同
 | `eternal.images_per_group` | 每个曝光组预期包含的照片数量。 |
 | `eternal.queue_poll_seconds` | 持续任务队列的检查间隔。 |
 | `eternal.archive_retry_seconds` | 归档失败后的重试延迟。 |
+| `processing.group_size` | 当前任务每个最终命名组要求的曝光张数；默认使用 `eternal.images_per_group`。 |
 
 | Webhook 字段 | 含义 |
 | --- | --- |
@@ -168,6 +169,7 @@ GUI 会自动创建 `config/auto_timelapse.yaml` 和 `config/webhook.yaml`，同
 - 工作流可执行文件、Python、Homebrew bottle、缓存及 SunsetScore 资源保存在 `.timelapse/dependencies/`。
 - 删除任务元数据不会删除已拍摄的照片或视频。
 - 清理策略可能删除任务工作目录中未保留的内容，SunsetScore 也可能删除 `hdr_enfuse`，请先用少量样例素材验证流程。
+- 有限任务失败时会保留已拍摄的原始照片供恢复，即使任务曾请求失败清理。
 
 ## 开发与打包
 

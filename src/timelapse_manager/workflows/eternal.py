@@ -71,6 +71,7 @@ class EternalWorkflow:
             self.state_dir,
             self.capture_dir,
             self._archive_lock,
+            self.images_per_group,
         )
 
     def run(self) -> None:

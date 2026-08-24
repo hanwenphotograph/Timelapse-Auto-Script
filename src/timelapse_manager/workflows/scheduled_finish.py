@@ -84,8 +84,9 @@ class ScheduledFinisher:
     ) -> bool:
         cleanup = self.task["cleanup"]
         requested = cleanup.get("enabled") and (success or cleanup.get("on_failure"))
-        if requested and not success and not capture_started:
-            self.runtime.log("拍摄尚未开始，跳过失败清理以保护工作目录")
+        if requested and not success:
+            reason = "原始照片" if capture_started else "工作目录"
+            self.runtime.log(f"任务失败，跳过清理以保护{reason}")
             return True
         if not requested:
             return True

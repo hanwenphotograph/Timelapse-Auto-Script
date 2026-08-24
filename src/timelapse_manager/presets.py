@@ -114,6 +114,13 @@ def validate_task(task: dict[str, Any], *, for_start: bool = False) -> None:
     _optional_number(capture, "interval_seconds", "capture.interval_seconds", 0.01)
     if not isinstance(task["processing"].get("enabled"), bool):
         raise ConfigError("processing.enabled 必须是 true 或 false")
+    group_size = task["processing"].get("group_size")
+    if group_size is not None and (
+        isinstance(group_size, bool)
+        or not isinstance(group_size, int)
+        or group_size < 2
+    ):
+        raise ConfigError("processing.group_size 必须为空或为大于等于 2 的整数")
     if task["preset"] == "manual" and for_start:
         required = ("work_dir", "start_date", "start_at", "end_date", "end_at")
         missing = [key for key in required if not capture.get(key)]

@@ -24,7 +24,7 @@ Closing the GUI does not stop background tasks. Reopen it at any time to inspect
 - Python 3.10 or newer.
 - Tk support in the selected Python installation.
 - Camera Timelapse Controller for real capture.
-- Bracketlapse 0.2.0 or newer when post-processing is enabled.
+- Bracketlapse 0.4.1 or newer when post-processing is enabled.
 
 The GUI can start before the external workflow tools are installed. Use **包管理 (Package Management)** after startup to inspect or install supported dependencies. Every workflow dependency is downloaded to `.timelapse/dependencies/` inside the application directory and executed from that private tree. The manager never falls back to commands from the global `PATH`, Homebrew, `pipx`, or user package directories; only basic operating-system utilities remain visible to child processes.
 
@@ -117,7 +117,7 @@ SunsetScore 0.10.0 or newer can sample processed photos and detect sunset glow. 
 
 After a managed date/time album receives a positive result, its time directory and outer date directory gain an `-Sx` suffix using the maximum sunset score. For example, score 3 renames `1900-01-01/0300-0900/` to `1900-01-01-S3/0300-0900-S3/`. When one date contains multiple positive albums, the date suffix uses the highest child score.
 
-Capture and post-processing use the public dependency protocols. Bracketlapse 0.2.0 or newer stays in one standby process and fuses each complete group as soon as it is ready, emitting an `hdr_ready` event. Bracketlapse 0.4.0 or newer also reports exact FFmpeg frame progress; older supported versions automatically fall back to indeterminate video progress. The manager forwards HDR events to one SunsetScore 0.10.0 or newer JSONL service, which owns directory scanning, sampling, aggregation, score-file writing, and one task-scoped model reused across all frames and eternal batches. Deflicker and video export finish after HDR production, while scoring can continue in parallel. The manager does not inspect either dependency's internal Python environment or implementation.
+Capture and post-processing use the public dependency protocols. Bracketlapse 0.4.1 or newer stays in one standby process and accepts only stable, complete final-name groups such as `0001_01.jpg` through member `N`, encoded with at least two digits; temporary `captXXXX.jpg` files and incomplete groups are ignored. `processing.group_size` defines `N` for a task and falls back to `eternal.images_per_group` when omitted. If standby exits during capture, the manager keeps the camera running and performs an overwrite recovery pass from the final photos after capture finishes. Bracketlapse emits `hdr_ready` events and exact FFmpeg frame progress. The manager forwards HDR events to one SunsetScore 0.10.0 or newer JSONL service, which owns directory scanning, sampling, aggregation, score-file writing, and one task-scoped model reused across all frames and eternal batches. Deflicker and video export finish after HDR production, while scoring can continue in parallel. The manager does not inspect either dependency's internal Python environment or implementation.
 
 ### Appearance
 
@@ -127,7 +127,7 @@ Use the control at the bottom of the sidebar to choose system, light, or dark ap
 
 The GUI creates `config/auto_timelapse.yaml` and `config/webhook.yaml` automatically. Example files are available beside them.
 
-| Project field | Meaning |
+| Project/task field | Meaning |
 | --- | --- |
 | `schema_version` | Configuration format version; normally leave it unchanged. |
 | `auto_root` | Base directory for scheduled and continuous output. |
@@ -152,6 +152,7 @@ The GUI creates `config/auto_timelapse.yaml` and `config/webhook.yaml` automatic
 | `eternal.images_per_group` | Expected exposures in each group. |
 | `eternal.queue_poll_seconds` | Continuous queue polling interval. |
 | `eternal.archive_retry_seconds` | Delay before an archive operation retries. |
+| `processing.group_size` | Exposures required in each final-name group for this task; defaults to `eternal.images_per_group`. |
 
 | Webhook field | Meaning |
 | --- | --- |
@@ -168,6 +169,7 @@ The GUI creates `config/auto_timelapse.yaml` and `config/webhook.yaml` automatic
 - Workflow executables, Python, Homebrew bottles, caches, and SunsetScore resources are stored in `.timelapse/dependencies/`.
 - Deleting task metadata does not delete captured photos or videos.
 - Cleanup rules can remove unreserved content from a task working directory, and SunsetScore can remove `hdr_enfuse`; test a workflow with sample material first.
+- Failed finite tasks preserve their captured source photos for recovery, even when failure cleanup was requested.
 
 ## Development
 

@@ -33,28 +33,34 @@ JPEG_BYTES = base64.b64decode(
 def main() -> int:
     args = sys.argv[1:]
     if "--version" in args:
-        print("bracketlapse 0.4.0")
+        print("bracketlapse 0.4.1")
         return 0
     if args and args[0] == "--standby":
         work_dir = Path(args[1])
         quiet_seconds = min(float(args[3]), 0.5)
-        return _run_standby(work_dir, quiet_seconds)
+        group_size = _option_int(args, "--group-size", 3)
+        return _run_standby(work_dir, quiet_seconds, group_size)
     work_dir = Path(args[0])
     work_dir.mkdir(parents=True, exist_ok=True)
-    groups = _complete_groups(work_dir)
+    group_size = _option_int(args, "--group-size", 3)
+    groups = _complete_groups(work_dir, group_size)
     frame_count = int(os.environ.get("FAKE_BRACKET_FRAMES", str(len(groups) or 1)))
     _fuse_missing(work_dir, frame_count)
     _finalize(work_dir, args)
     return 0
 
 
-def _run_standby(work_dir: Path, quiet_seconds: float) -> int:
+def _run_standby(work_dir: Path, quiet_seconds: float, group_size: int) -> int:
+    failure_code = os.environ.get("FAKE_BRACKET_STANDBY_EXIT_CODE")
+    if failure_code is not None:
+        time.sleep(float(os.environ.get("FAKE_BRACKET_STANDBY_FAIL_DELAY", "0")))
+        return int(failure_code)
     work_dir.mkdir(parents=True, exist_ok=True)
     observed_groups = 0
     last_change = time.monotonic()
     armed = False
     while True:
-        groups = _complete_groups(work_dir)
+        groups = _complete_groups(work_dir, group_size)
         if len(groups) != observed_groups:
             observed_groups = len(groups)
             last_change = time.monotonic()
@@ -69,7 +75,7 @@ def _run_standby(work_dir: Path, quiet_seconds: float) -> int:
     return 0
 
 
-def _complete_groups(work_dir: Path) -> list[int]:
+def _complete_groups(work_dir: Path, group_size: int) -> list[int]:
     counts: dict[int, int] = {}
     for path in work_dir.iterdir():
         if not path.is_file():
@@ -78,7 +84,13 @@ def _complete_groups(work_dir: Path) -> list[int]:
         if match is not None:
             group = int(match.group(1))
             counts[group] = counts.get(group, 0) + 1
-    return sorted(group for group, count in counts.items() if count >= 3)
+    return sorted(group for group, count in counts.items() if count >= group_size)
+
+
+def _option_int(args: list[str], name: str, default: int) -> int:
+    if name not in args:
+        return default
+    return int(args[args.index(name) + 1])
 
 
 def _fuse_missing(work_dir: Path, frame_count: int) -> None:
