@@ -16,6 +16,7 @@ from timelapse_manager.dependency_manager.runtime_dependencies import (
 )
 from timelapse_manager.errors import TaskError
 from timelapse_manager.io_utils import now_iso
+from timelapse_manager.maintenance import process_deferred_hdr_deletions
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.presets import validate_task
 from timelapse_manager.progress_compat import TaskLogProgressReader
@@ -34,6 +35,7 @@ class ManagerService:
     def __init__(self, root: Path | None = None):
         self.paths = AppPaths.discover(root)
         self._log_progress = TaskLogProgressReader()
+        self._last_deferred_hdr_cleanup = 0.0
         self.config_manager = ConfigManager(self.paths)
         self.config: LoadedConfig
         self.store: TaskStore
@@ -45,6 +47,14 @@ class ManagerService:
         self.store = TaskStore(self.config)
         self.store.ensure()
         self.chains = TaskChainManager(self.store)
+        self._process_deferred_hdr_deletions()
+
+    def _process_deferred_hdr_deletions(self) -> None:
+        current = time.monotonic()
+        if current - self._last_deferred_hdr_cleanup < 60:
+            return
+        self._last_deferred_hdr_cleanup = current
+        process_deferred_hdr_deletions(self.config.auto_root, lambda _message: None)
 
     def initialize(self) -> dict[str, str]:
         self.config_manager.ensure()
@@ -69,6 +79,7 @@ class ManagerService:
         return self.store.create(name, preset, task_id)
 
     def list_tasks(self) -> list[dict[str, Any]]:
+        self._process_deferred_hdr_deletions()
         items = self.store.list_with_state()
         for item in items:
             task_id = str(item["task"]["id"])

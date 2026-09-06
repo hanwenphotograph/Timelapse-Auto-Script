@@ -113,7 +113,7 @@ Use **测试文本和图片 (Test Text and Image)** to validate and save the edi
 
 ### SunsetScore
 
-SunsetScore 0.12.0 or newer can sample processed photos and detect sunset glow. Positive results retain `hdr_enfuse`; negative results remove it; analysis failures preserve the photos and fail the task safely. Install the CLI and prepare its resources from **包管理 (Package Management)**. Its Python package, inference runtime, models, and cache all stay under `.timelapse/dependencies/`.
+SunsetScore 0.12.0 or newer can sample processed photos and detect sunset glow. Positive results retain `hdr_enfuse`; negative results mark it for deletion after three days; analysis failures preserve the photos and fail the task safely. Install the CLI and prepare its resources from **包管理 (Package Management)**. Its Python package, inference runtime, models, and cache all stay under `.timelapse/dependencies/`.
 
 After a managed date/time album receives a positive result, its time directory and outer date directory gain an `-Sx` suffix using the maximum sunset score. For example, score 3 renames `1900-01-01/0300-0900/` to `1900-01-01-S3/0300-0900-S3/`. When one date contains multiple positive albums, the date suffix uses the highest child score.
 
@@ -168,7 +168,7 @@ The GUI creates `config/auto_timelapse.yaml` and `config/webhook.yaml` automatic
 - Runtime state and logs are stored in `.timelapse/tasks/`.
 - Workflow executables, Python, Homebrew bottles, caches, and SunsetScore resources are stored in `.timelapse/dependencies/`.
 - Deleting task metadata does not delete captured photos or videos.
-- Cleanup rules can remove unreserved content from a task working directory, and SunsetScore can remove `hdr_enfuse`; test a workflow with sample material first.
+- Cleanup rules can remove unreserved content from a task working directory, and SunsetScore can mark `hdr_enfuse` for deletion after three days; test a workflow with sample material first.
 - Failed finite tasks preserve their captured source photos for recovery, even when failure cleanup was requested.
 
 ## Development

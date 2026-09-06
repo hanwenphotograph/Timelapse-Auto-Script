@@ -113,7 +113,7 @@ image_body: '{"msgtype":"image","image":{"base64":"__IMGBASE64__","md5":"__IMGMD
 
 ### SunsetScore
 
-SunsetScore 0.12.0 或更高版本可以抽样分析处理后的照片并识别晚霞。检测到晚霞时保留 `hdr_enfuse`，未检测到时删除该目录；分析失败时保留照片并让任务安全失败。请从“包管理”安装 CLI 并准备资源，其 Python 包、推理运行时、模型与缓存都会保存在 `.timelapse/dependencies/` 内。
+SunsetScore 0.12.0 或更高版本可以抽样分析处理后的照片并识别晚霞。检测到晚霞时保留 `hdr_enfuse`，未检测到时先标记该目录并在三日后删除；分析失败时保留照片并让任务安全失败。请从“包管理”安装 CLI 并准备资源，其 Python 包、推理运行时、模型与缓存都会保存在 `.timelapse/dependencies/` 内。
 
 受管的日期/时间相册得到晚霞结果后，时间目录和外层日期目录都会按最高晚霞评分添加 `-Sx` 后缀。例如评分为 3 时，`1900-01-01/0300-0900/` 会改名为 `1900-01-01-S3/0300-0900-S3/`。同一日期包含多个晚霞相册时，日期目录使用所有子相册中的最高分。
 
@@ -168,7 +168,7 @@ GUI 会自动创建 `config/auto_timelapse.yaml` 和 `config/webhook.yaml`，同
 - 运行状态和日志保存在 `.timelapse/tasks/`。
 - 工作流可执行文件、Python、Homebrew bottle、缓存及 SunsetScore 资源保存在 `.timelapse/dependencies/`。
 - 删除任务元数据不会删除已拍摄的照片或视频。
-- 清理策略可能删除任务工作目录中未保留的内容，SunsetScore 也可能删除 `hdr_enfuse`，请先用少量样例素材验证流程。
+- 清理策略可能删除任务工作目录中未保留的内容，SunsetScore 会将无晚霞的 `hdr_enfuse` 标记为三日后删除，请先用少量样例素材验证流程。
 - 有限任务失败时会保留已拍摄的原始照片供恢复，即使任务曾请求失败清理。
 
 ## 开发与打包

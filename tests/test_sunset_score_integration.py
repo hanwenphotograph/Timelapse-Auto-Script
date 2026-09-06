@@ -8,17 +8,23 @@ from tests.sunset_integration_support import SunsetScoreIntegrationTestCase
 
 
 class SunsetScoreIntegrationTests(SunsetScoreIntegrationTestCase):
-    def test_negative_score_deletes_hdr_after_video(self) -> None:
+    def test_negative_score_marks_hdr_for_deletion_after_video(self) -> None:
         state, work_dir, log = self._run_scheduled(
             {"FAKE_SUNSET_SCORES": "1"}, cleanup_enabled=False
         )
 
         self.assertEqual(state["status"], "completed", state)
         self.assertTrue((work_dir / "hdr_video" / "timelapse.mp4").exists())
-        self.assertFalse((work_dir / "hdr_enfuse").exists())
+        self.assertTrue((work_dir / "hdr_enfuse").exists())
+        self.assertTrue(
+            (work_dir / "hdr_enfuse" / ".timelapse-hdr-enfuse-delete").exists()
+        )
         self.assertIn("晚霞评分已自动启用", log)
         self.assertLess(log.index("晚霞增量扫描完成"), log.index("Creating video"))
-        self.assertLess(log.index("Creating video"), log.index("已删除 HDR 照片目录"))
+        self.assertLess(
+            log.index("Creating video"),
+            log.index("已标记 HDR 照片目录延迟删除"),
+        )
         child_progress = {
             child["role"]: child.get("progress") for child in state["children"]
         }

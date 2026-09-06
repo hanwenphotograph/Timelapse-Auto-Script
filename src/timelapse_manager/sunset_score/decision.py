@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import NoReturn, TYPE_CHECKING
 
 from timelapse_manager.errors import TaskError
+from timelapse_manager.maintenance import mark_hdr_for_deletion
 from timelapse_manager.sunset_score.models import StoredScore, SunsetScoreDecision
 
 if TYPE_CHECKING:
@@ -28,7 +28,11 @@ def apply_score_result(
             f"{result.failed_count} 张采样照片评分失败且未检测到晚霞，结果不足以安全删图",
         )
 
-    action = "保留 hdr_enfuse" if result.has_sunset else "删除 hdr_enfuse"
+    action = (
+        "保留 hdr_enfuse"
+        if result.has_sunset
+        else "标记 hdr_enfuse，三日后删除"
+    )
     summary = _summary(label, hdr_dir, result, action)
     runtime.log(summary)
     runtime.webhook.notify("sunset-score-result", summary)
@@ -47,10 +51,12 @@ def apply_score_result(
         runtime.log(f"检测到晚霞，保留 HDR 照片目录：{hdr_dir}")
     else:
         try:
-            shutil.rmtree(hdr_dir)
-        except OSError as exc:
-            raise TaskError(f"无法删除无晚霞 HDR 目录 {hdr_dir}：{exc}") from exc
-        runtime.log(f"未检测到晚霞，已删除 HDR 照片目录：{hdr_dir}")
+            marker = mark_hdr_for_deletion(hdr_dir)
+        except (OSError, TaskError) as exc:
+            raise TaskError(f"无法标记无晚霞 HDR 目录 {hdr_dir}：{exc}") from exc
+        runtime.log(
+            f"未检测到晚霞，已标记 HDR 照片目录延迟删除：{marker}；三日后执行"
+        )
     return SunsetScoreDecision(result, highest_path, result.has_sunset)
 
 

@@ -15,7 +15,10 @@ from timelapse_manager.dependency_manager.runtime_dependencies import (
     resolve_runtime_commands,
 )
 from timelapse_manager.errors import ConfigError, ProcessError, TaskError
-from timelapse_manager.maintenance import cleanup_work_directory
+from timelapse_manager.maintenance import (
+    HDR_DELETION_MARKER,
+    cleanup_work_directory,
+)
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.presets import validate_task
 from timelapse_manager.process_utils import resolve_command, terminate_tree
@@ -58,6 +61,15 @@ class SafetyAndCompatibilityTests(unittest.TestCase):
             cleanup_work_directory(work, ["hdr_video"], lambda _message: None)
             self.assertTrue(keep.is_dir())
             self.assertFalse(remove.exists())
+
+    def test_cleanup_keeps_marked_hdr_until_deferred_deletion(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work = Path(temp_dir) / "root" / "task"
+            hdr = work / "hdr_enfuse"
+            hdr.mkdir(parents=True)
+            (hdr / HDR_DELETION_MARKER).write_text("2099-01-01T00:00:00+00:00")
+            cleanup_work_directory(work, [], lambda _message: None)
+            self.assertTrue(hdr.is_dir())
 
     def test_quoted_command_with_arguments_resolves(self) -> None:
         command = f'"{sys.executable}" -c "print(123)"'

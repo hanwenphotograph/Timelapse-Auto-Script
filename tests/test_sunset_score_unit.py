@@ -6,9 +6,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from timelapse_manager.dependency_manager.paths import DependencyPaths
+from timelapse_manager.maintenance import (
+    HDR_DELETION_MARKER,
+    process_deferred_hdr_deletions,
+)
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.sunset_score.cache import (
     CacheMismatchError,
@@ -179,7 +184,7 @@ class SunsetScoreCacheTests(unittest.TestCase):
         )
         self.assertIn("复用有效缓存", "\n".join(runtime.logs))
 
-    def test_negative_result_deletes_hdr_directory(self) -> None:
+    def test_negative_result_marks_hdr_directory_for_delayed_deletion(self) -> None:
         self._images(1)
         run_fake_score(self.hdr_dir, "1")
         runtime = CacheRuntime()
@@ -194,7 +199,27 @@ class SunsetScoreCacheTests(unittest.TestCase):
 
         assert decision is not None
         self.assertFalse(decision.retained_hdr)
+        self.assertTrue(self.hdr_dir.exists())
+        marker = self.hdr_dir / HDR_DELETION_MARKER
+        self.assertTrue(marker.exists())
+
+    def test_due_hdr_deletion_removes_only_hdr_directory(self) -> None:
+        self._images(1)
+        marker = self.hdr_dir / HDR_DELETION_MARKER
+        marker.write_text(
+            (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+            encoding="utf-8",
+        )
+        other_cache = self.work_dir / "other-cache"
+        other_cache.mkdir()
+        deleted = process_deferred_hdr_deletions(
+            self.work_dir.parent,
+            lambda _message: None,
+        )
+
+        self.assertEqual(deleted, 1)
         self.assertFalse(self.hdr_dir.exists())
+        self.assertTrue(other_cache.exists())
 
 
 if __name__ == "__main__":
