@@ -13,12 +13,12 @@ class SunsetScoreAvailabilityTests(unittest.TestCase):
         return_value=["/tools/sunsetscore"],
     )
     def test_supported_version_enables_scoring(self, _resolve) -> None:
-        completed = subprocess.CompletedProcess([], 0, "sunsetscore 0.10.0\n", "")
+        completed = subprocess.CompletedProcess([], 0, "sunsetscore 0.12.0\n", "")
         result = detect_sunset_score(
             "sunsetscore", run=lambda *_args, **_kwargs: completed
         )
         self.assertTrue(result.enabled)
-        self.assertEqual(result.version, "0.10.0")
+        self.assertEqual(result.version, "0.12.0")
 
     @patch(
         "timelapse_manager.sunset_score.availability.resolve_command",

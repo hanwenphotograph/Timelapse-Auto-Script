@@ -113,11 +113,11 @@ image_body: '{"msgtype":"image","image":{"base64":"__IMGBASE64__","md5":"__IMGMD
 
 ### SunsetScore
 
-SunsetScore 0.10.0 或更高版本可以抽样分析处理后的照片并识别晚霞。检测到晚霞时保留 `hdr_enfuse`，未检测到时删除该目录；分析失败时保留照片并让任务安全失败。请从“包管理”安装 CLI 并准备资源，其 Python 包、推理运行时、模型与缓存都会保存在 `.timelapse/dependencies/` 内。
+SunsetScore 0.12.0 或更高版本可以抽样分析处理后的照片并识别晚霞。检测到晚霞时保留 `hdr_enfuse`，未检测到时删除该目录；分析失败时保留照片并让任务安全失败。请从“包管理”安装 CLI 并准备资源，其 Python 包、推理运行时、模型与缓存都会保存在 `.timelapse/dependencies/` 内。
 
 受管的日期/时间相册得到晚霞结果后，时间目录和外层日期目录都会按最高晚霞评分添加 `-Sx` 后缀。例如评分为 3 时，`1900-01-01/0300-0900/` 会改名为 `1900-01-01-S3/0300-0900-S3/`。同一日期包含多个晚霞相册时，日期目录使用所有子相册中的最高分。
 
-拍摄和后期处理采用依赖公开协议。Bracketlapse 0.4.1 或更高版本会保持一个 standby 进程，并且只接受稳定、完整的最终命名组，例如从 `0001_01.jpg` 至以至少两位数字编码的第 `N` 张成员；`captXXXX.jpg` 临时文件和不完整组会被忽略。任务的 `processing.group_size` 定义 `N`，未配置时使用 `eternal.images_per_group`。如果 standby 在拍摄期间提前退出，Manager 会让相机继续运行，并在拍摄完成后使用最终照片执行覆盖恢复处理。Bracketlapse 会发出 `hdr_ready` 事件并报告精确的 FFmpeg 帧进度。Manager 将 HDR 事件转发给 SunsetScore 0.10.0 或更高版本的 JSONL 常驻服务，由该服务负责目录扫描、采样、聚合和评分文件写入，并在同一任务的所有帧及永续批次中复用一个模型。HDR 生产完成后再收尾去闪和视频导出，评分可以并行继续。Manager 不会探测两个依赖的内部 Python 环境，也不会复制其内部实现。
+拍摄和后期处理采用依赖公开协议。Bracketlapse 0.4.1 或更高版本会保持一个 standby 进程，并且只接受稳定、完整的最终命名组，例如从 `0001_01.jpg` 至以至少两位数字编码的第 `N` 张成员；`captXXXX.jpg` 临时文件和不完整组会被忽略。任务的 `processing.group_size` 定义 `N`，未配置时使用 `eternal.images_per_group`。如果 standby 在拍摄期间提前退出，Manager 会让相机继续运行，并在拍摄完成后使用最终照片执行覆盖恢复处理。Bracketlapse 会发出 `hdr_ready` 事件并报告精确的 FFmpeg 帧进度。Manager 将 HDR 事件转发给 SunsetScore 0.12.0 或更高版本的 JSONL 常驻服务，由该服务负责目录扫描、采样、聚合和评分文件写入，并在同一任务的所有帧及永续批次中复用一个模型。HDR 生产完成后再收尾去闪和视频导出，评分可以并行继续。Manager 不会探测两个依赖的内部 Python 环境，也不会复制其内部实现。
 
 ### 界面外观
 

@@ -25,7 +25,7 @@ class SunsetScoreJsonlTests(unittest.TestCase):
             runtime,  # type: ignore[arg-type]
             ("/tools/sunsetscore",),
             interval=7,
-            application_version="0.10.0",
+            application_version="0.12.0",
         )
 
         self.assertEqual(
@@ -51,12 +51,12 @@ class SunsetScoreJsonlTests(unittest.TestCase):
             },
         )
         event = decode_event(
-            '{"event":"ready","protocol_version":1,"application_version":"0.10.0"}'
+            '{"event":"ready","protocol_version":1,"application_version":"0.12.0"}'
         )
         assert event is not None
-        self.assertEqual(ready_error(event, "0.10.0"), "")
+        self.assertEqual(ready_error(event, "0.12.0"), "")
         self.assertIn(
-            "协议版本", ready_error(event | {"protocol_version": 2}, "0.10.0")
+            "协议版本", ready_error(event | {"protocol_version": 2}, "0.12.0")
         )
 
     def test_scan_progress_validates_processed_and_total_counts(self) -> None:

@@ -12,7 +12,7 @@ from fake_sunsetscore_server import serve_jsonl
 
 
 def main() -> int:
-    version = os.environ.get("FAKE_SUNSET_VERSION", "0.10.0")
+    version = os.environ.get("FAKE_SUNSET_VERSION", "0.12.0")
     args = sys.argv[1:]
     if "--version" in args:
         print(f"sunsetscore {version}")

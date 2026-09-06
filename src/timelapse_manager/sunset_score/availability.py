@@ -12,7 +12,7 @@ from typing import Callable
 from timelapse_manager.process_utils import resolve_command
 
 
-MINIMUM_VERSION = (0, 10, 0)
+MINIMUM_VERSION = (0, 12, 0)
 MINIMUM_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_VERSION)
 VERSION_PATTERN = re.compile(
     r"^\s*sunsetscore\s+(\d+)\.(\d+)\.(\d+)(?:\S*)?\s*$",

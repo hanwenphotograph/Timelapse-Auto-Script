@@ -17,12 +17,12 @@ from timelapse_manager.sunset_score.availability import SunsetScoreAvailability
 
 class SunsetResourceTests(unittest.TestCase):
     def test_public_status_reports_resources_separately(self) -> None:
-        availability = SunsetScoreAvailability(("/tools/sunsetscore",), "0.10.0")
+        availability = SunsetScoreAvailability(("/tools/sunsetscore",), "0.12.0")
         completed = subprocess.CompletedProcess(
             [],
             0,
             (
-                '{"application_version":"0.10.0","resources":{'
+                '{"application_version":"0.12.0","resources":{'
                 '"runtime":{"state":"ready","detail":"CPU"},'
                 '"model":{"state":"ready","detail":"model",'
                 '"artifact":{"filename":"model.gguf","size":100}},'
@@ -40,9 +40,9 @@ class SunsetResourceTests(unittest.TestCase):
         self.assertIn("CPU", results["sunset_runtime"][1])
 
     def test_invalid_public_status_is_reported_as_issue(self) -> None:
-        availability = SunsetScoreAvailability(("/tools/sunsetscore",), "0.10.0")
+        availability = SunsetScoreAvailability(("/tools/sunsetscore",), "0.12.0")
         completed = subprocess.CompletedProcess(
-            [], 0, '{"application_version":"0.10.0","resources":{}}', ""
+            [], 0, '{"application_version":"0.12.0","resources":{}}', ""
         )
 
         state, detail = inspect_sunset_resources(
@@ -55,7 +55,7 @@ class SunsetResourceTests(unittest.TestCase):
 
 class DependencyInspectionTests(unittest.TestCase):
     def test_parent_and_child_dependencies_keep_catalog_order(self) -> None:
-        sunset = SunsetScoreAvailability(("/tools/sunsetscore",), "0.10.0")
+        sunset = SunsetScoreAvailability(("/tools/sunsetscore",), "0.12.0")
         bracket = BracketlapseAvailability(("/tools/bracketlapse",), "0.2.0")
         resources = {
             "sunset_runtime": ("missing", "runtime missing"),
@@ -88,7 +88,7 @@ class DependencyInspectionTests(unittest.TestCase):
             patch(
                 "timelapse_manager.dependency_manager.inspection.inspect_build_info",
                 side_effect=lambda command, **_kwargs: DependencyBuildInfo(
-                    "0.10.0" if "sunsetscore" in command[0] else "0.2.0",
+                    "0.12.0" if "sunsetscore" in command[0] else "0.2.0",
                     "dev_deflick" if "bracketlapse" in command[0] else "main",
                     "2026-08-08T12:30:00Z",
                     "abc123",
