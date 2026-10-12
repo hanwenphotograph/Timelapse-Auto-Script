@@ -21,6 +21,7 @@ from timelapse_manager.io_utils import now_iso
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.process_utils import process_identity
 from timelapse_manager.progress_stages import MAIN_STAGES, validate_main_stage
+from timelapse_manager.runtime_storage import StorageGuard
 from timelapse_manager.sunset_score import SunsetScoreService
 from timelapse_manager.task_store import TaskStore
 from timelapse_manager.webhook import WebhookClient
@@ -79,6 +80,16 @@ class TaskRuntime:
             str(commands["sunsetscore"]),
             int(self.project["sunset_score"]["interval"]),
             processing_enabled=bool(self.task["processing"].get("enabled", True)),
+        )
+        work_dir = self.task.get("capture", {}).get("work_dir")
+        output = (
+            self.paths.resolve_from_root(str(work_dir)) if work_dir else self.auto_root
+        )
+        self._storage = StorageGuard(
+            [self.store.runtime_dir, output],
+            float(self.project["disk_space_warning_threshold_gb"]),
+            self.log,
+            self.notify_async,
         )
 
     def _create_logger(self, console: bool) -> logging.Logger:
@@ -268,6 +279,12 @@ class TaskRuntime:
                 )
         if self.hard_stop.is_set():
             self.terminate_all()
+        else:
+            try:
+                self._storage.check()
+            except Exception:
+                self.terminate_all()
+                raise
 
     def install_signal_handlers(self) -> None:
         def request_stop(signum: int, _frame: object) -> None:

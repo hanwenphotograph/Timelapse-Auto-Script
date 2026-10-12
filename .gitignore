@@ -4,6 +4,7 @@ config/webhook.yaml
 config/tasks/*.yaml
 .timelapse/
 bin/
+/TimelapseManager.app/
 build/
 dist/
 *.spec

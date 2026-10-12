@@ -27,6 +27,7 @@ from timelapse_manager.process_utils import (
     terminate_tree,
 )
 from timelapse_manager.task_chain import TaskChainManager
+from timelapse_manager.task_start_guard import validate_resources
 from timelapse_manager.task_store import ACTIVE_STATUSES, TaskStore
 from timelapse_manager.webhook import WebhookClient
 
@@ -175,8 +176,9 @@ class ManagerService:
     def _claim_start(self, task: dict[str, Any]) -> dict[str, Any]:
         task_id = task["id"]
         metadata = self.chains.metadata(task) or {}
-        with self.chains.lock(metadata.get("chain_id")):
+        with self.chains.lock("task-start"), self.chains.lock(metadata.get("chain_id")):
             self.chains.validate_start(task)
+            validate_resources(self.store, task)
             with self.store.start_lock(task_id):
                 state = self.store.read_state(task_id, reconcile=True)
                 if state["status"] in ACTIVE_STATUSES:

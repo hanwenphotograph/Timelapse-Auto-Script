@@ -12,6 +12,7 @@ from timelapse_manager.runtime import HardStopRequested, TaskRuntime
 
 def _execute(runtime: TaskRuntime) -> None:
     runtime.install_signal_handlers()
+    runtime.poll_controls()
     runtime.log(
         f"任务工作进程启动，模式={runtime.task['preset']}，PID={runtime.state['runner_pid']}"
     )

@@ -22,6 +22,7 @@ from timelapse_manager.ui.dialogs import NewTaskDialog, YamlEditorDialog
 from timelapse_manager.ui.package_page import PackagePage
 from timelapse_manager.ui.progress import compact_timestamp, task_progress_label
 from timelapse_manager.ui.progress_panel import TaskProgressPanel
+from timelapse_manager.ui.sidebar import build_sidebar
 from timelapse_manager.ui.table import ModernTable
 from timelapse_manager.ui.task_deletion import delete_tasks
 from timelapse_manager.ui.theme import (
@@ -32,7 +33,6 @@ from timelapse_manager.ui.theme import (
     FONT_FAMILY,
     MONOSPACE_FONT_FAMILY,
     MUTED,
-    SIDEBAR,
     SUCCESS,
     SURFACE,
     SURFACE_ALT,
@@ -153,103 +153,7 @@ class TimelapseApp:
         self._build_status_bar()
 
     def _build_sidebar(self) -> None:
-        sidebar = ctk.CTkFrame(
-            self.root,
-            width=226,
-            corner_radius=0,
-            fg_color=SIDEBAR,
-        )
-        sidebar.grid(row=0, column=0, sticky="nsew")
-        sidebar.grid_propagate(False)
-        sidebar.grid_rowconfigure(2, weight=1)
-        sidebar.grid_columnconfigure(0, weight=1)
-
-        brand = ctk.CTkFrame(sidebar, fg_color="transparent")
-        brand.grid(row=0, column=0, sticky="ew", padx=20, pady=(24, 28))
-        brand.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(
-            brand,
-            text="TL",
-            width=44,
-            height=44,
-            corner_radius=12,
-            fg_color=ACCENT,
-            text_color="#FFFFFF",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=16, weight="bold"),
-        ).grid(row=0, column=0, rowspan=2, sticky="w")
-        ctk.CTkLabel(
-            brand,
-            text="Timelapse",
-            text_color=TEXT,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=17, weight="bold"),
-            anchor="w",
-        ).grid(row=0, column=1, sticky="sw", padx=(11, 0))
-        ctk.CTkLabel(
-            brand,
-            text=f"Manager · {build_mode_label()}",
-            text_color=MUTED,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=10),
-            anchor="w",
-        ).grid(row=1, column=1, sticky="nw", padx=(11, 0))
-
-        nav = ctk.CTkFrame(sidebar, fg_color="transparent")
-        nav.grid(row=1, column=0, sticky="new", padx=13)
-        nav.grid_columnconfigure(0, weight=1)
-        nav_items = (
-            ("overview", "运行总览"),
-            ("tasks", "任务管理"),
-            ("processes", "进程监控"),
-            ("packages", "包管理"),
-            ("config", "配置中心"),
-            ("logs", "运行日志"),
-        )
-        self.nav_buttons: dict[str, ctk.CTkButton] = {}
-        for row, (key, label) in enumerate(nav_items):
-            button = ctk.CTkButton(
-                nav,
-                text=f"  {label}",
-                command=lambda value=key: self.show_page(value),
-                height=42,
-                corner_radius=10,
-                anchor="w",
-                fg_color="transparent",
-                hover_color=("#DCE6F7", "#1C2A42"),
-                text_color=TEXT,
-                font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold"),
-            )
-            button.grid(row=row, column=0, sticky="ew", pady=3)
-            self.nav_buttons[key] = button
-
-        appearance = ctk.CTkFrame(
-            sidebar,
-            fg_color=SURFACE,
-            corner_radius=12,
-            border_width=1,
-            border_color=BORDER,
-        )
-        appearance.grid(row=3, column=0, sticky="sew", padx=16, pady=18)
-        appearance.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
-            appearance,
-            text="界面外观",
-            text_color=TEXT,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold"),
-            anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=13, pady=(12, 6))
-        ctk.CTkOptionMenu(
-            appearance,
-            values=["跟随系统", "浅色", "深色"],
-            variable=self.appearance_value,
-            command=self._change_appearance,
-            height=32,
-            corner_radius=8,
-            fg_color=SURFACE_ALT,
-            button_color=ACCENT,
-            button_hover_color=ACCENT,
-            text_color=TEXT,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
-            dropdown_font=ctk.CTkFont(family=FONT_FAMILY, size=11),
-        ).grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        build_sidebar(self, build_mode_label())
 
     def _build_header(self) -> None:
         header = ctk.CTkFrame(self.main, fg_color="transparent")
@@ -764,6 +668,7 @@ class TimelapseApp:
             self.package_page.refresh()
 
     def refresh_current_page(self) -> None:
+        self.camera_status.refresh()
         if self._active_page == "packages":
             self.package_page.refresh()
             return
@@ -1282,5 +1187,6 @@ class TimelapseApp:
 
     def close(self) -> None:
         self._closed = True
+        self.camera_status.close()
         self.package_page.close()
         self.root.destroy()

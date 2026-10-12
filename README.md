@@ -8,6 +8,10 @@ Timelapse Manager is a cross-platform GUI and CLI for scheduling, running, and m
 
 Closing the GUI does not stop background tasks. Reopen it at any time to inspect progress, logs, and processes.
 
+The sidebar shows camera connection status, detected models and ports, and the last check time. A check runs when the GUI opens; click **Refresh camera** (刷新相机) or the page's **Refresh** button to check again. Detection runs in the background without taking photos. Missing detection dependencies, detection errors, and disconnected cameras are shown separately.
+
+Active tasks cannot share a work directory or overlap capture schedules. During capture and processing, free disk space is checked every five seconds. The configured threshold triggers a warning; below 1 GiB, child processes stop and original photos are preserved. Restart manually after freeing space.
+
 ## Main Features
 
 - Create manual, one-time scheduled, recurring, or continuous capture tasks.
