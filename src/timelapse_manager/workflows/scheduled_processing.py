@@ -102,6 +102,10 @@ class ScheduledProcessing:
         )
         return self._run_batch("bracketlapse-recovery", overwrite=True)
 
+    def run_batch(self) -> bool:
+        """Process a downloaded capture without starting standby or the camera."""
+        return self._run_batch("bracketlapse-process", overwrite=False)
+
     def _run_batch(self, role: str, *, overwrite: bool) -> bool:
         argv = self.runtime.bracket_command + [
             str(self.spec.work_dir),

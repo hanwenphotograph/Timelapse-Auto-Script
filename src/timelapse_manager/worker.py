@@ -16,7 +16,11 @@ def _execute(runtime: TaskRuntime) -> None:
     runtime.log(
         f"任务工作进程启动，模式={runtime.task['preset']}，PID={runtime.state['runner_pid']}"
     )
-    if runtime.task["preset"] == "eternal":
+    if runtime.task["preset"] == "processing":
+        from timelapse_manager.workflows.deferred import run_processing
+
+        run_processing(runtime)
+    elif runtime.task["preset"] == "eternal":
         from timelapse_manager.workflows.eternal import EternalWorkflow
 
         EternalWorkflow(runtime).run()

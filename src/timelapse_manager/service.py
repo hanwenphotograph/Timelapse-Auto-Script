@@ -19,6 +19,7 @@ from timelapse_manager.io_utils import now_iso
 from timelapse_manager.maintenance import process_deferred_hdr_deletions
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.presets import validate_task
+from timelapse_manager.processing.schedule import requires_processing_tools
 from timelapse_manager.progress_compat import TaskLogProgressReader
 from timelapse_manager.process_utils import (
     detached_creation_flags,
@@ -33,7 +34,7 @@ from timelapse_manager.webhook import WebhookClient
 
 
 class ManagerService:
-    def __init__(self, root: Path | None = None):
+    def __init__(self, root: Path | None = None, *, start_scheduler: bool = True):
         self.paths = AppPaths.discover(root)
         self._log_progress = TaskLogProgressReader()
         self._last_deferred_hdr_cleanup = 0.0
@@ -42,6 +43,10 @@ class ManagerService:
         self.store: TaskStore
         self.chains: TaskChainManager
         self.reload()
+        if start_scheduler:
+            from timelapse_manager.processing.scheduler import ensure_scheduler
+
+            ensure_scheduler(self)
 
     def reload(self) -> None:
         self.config = self.config_manager.load(create=True)
@@ -115,7 +120,8 @@ class ManagerService:
         resolved = resolve_runtime_commands(
             self.paths.root,
             commands,
-            processing_enabled=bool(task["processing"].get("enabled", True)),
+            processing_enabled=requires_processing_tools(task, self.config.project),
+            capture_enabled=task["preset"] != "processing",
         )
         return task, list(resolved.camera), list(resolved.bracketlapse)
 

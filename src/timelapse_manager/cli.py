@@ -119,6 +119,7 @@ def _parser() -> argparse.ArgumentParser:
     worker = commands.add_parser("_worker", help=argparse.SUPPRESS)
     worker.add_argument("--task", required=True)
     worker.add_argument("--console", action="store_true")
+    commands.add_parser("_processing_scheduler", help=argparse.SUPPRESS)
     return parser
 
 
@@ -330,6 +331,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "_worker":
         return run_worker(args.task, args.root, console=args.console)
+    if args.command == "_processing_scheduler":
+        from timelapse_manager.processing.scheduler import run_scheduler
+
+        return run_scheduler(args.root)
     try:
         service = ManagerService(args.root)
         if args.command == "init":

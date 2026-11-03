@@ -17,7 +17,7 @@ PRESET_DESCRIPTIONS = {
     "manual": "手动指定日期、时段和工作目录的单次任务",
 }
 
-PERSISTED_PRESETS = {"manual", "eternal", "scheduled_once", "scheduled_loop"}
+PERSISTED_PRESETS = {"manual", "eternal", "scheduled_once", "scheduled_loop", "processing"}
 LEGACY_SCHEDULED_PRESETS = {"scheduled_once", "scheduled_loop"}
 SCHEMA_VERSION = 2
 
@@ -145,6 +145,11 @@ def validate_task(task: dict[str, Any], *, for_start: bool = False) -> None:
         raise ConfigError("retry.enabled 必须是 true 或 false")
     _optional_number(retry, "delay_seconds", "retry.delay_seconds", 0)
     _validate_continuation(task)
+
+    if task["preset"] == "processing":
+        from timelapse_manager.processing.validation import validate_processing_task
+
+        validate_processing_task(task)
 
     if task["preset"] == "eternal":
         eternal = task.get("eternal")

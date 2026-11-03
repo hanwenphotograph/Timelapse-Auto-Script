@@ -14,6 +14,8 @@ from typing import Any
 
 from timelapse_manager.album_naming import date_album_path
 from timelapse_manager.errors import ConfigError, TaskError
+from timelapse_manager.config import ConfigManager
+from timelapse_manager.processing.schedule import processing_ready
 from timelapse_manager.io_utils import (
     load_json,
     load_yaml,
@@ -493,6 +495,21 @@ class EternalWorkflow:
             marker = markers[0]
             try:
                 data = load_yaml(marker)
+                if "queued_at" not in data:
+                    data["queued_at"] = (
+                        datetime.fromtimestamp(marker.stat().st_mtime)
+                        .astimezone()
+                        .isoformat()
+                    )
+                    save_yaml(marker, data)
+                project = ConfigManager(self.runtime.paths).load().project
+                if self.task["processing"].get(
+                    "enabled", True
+                ) and not processing_ready(project, data["queued_at"]):
+                    self.runtime.set_progress(eternal_processing_waiting=True)
+                    time.sleep(float(project["eternal"]["queue_poll_seconds"]))
+                    continue
+                self.runtime.set_progress(eternal_processing_waiting=False)
                 success = self._batch_processor.process(data)
             except Exception as exc:
                 success = False

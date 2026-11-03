@@ -17,7 +17,8 @@ Timelapse Manager 是一个跨平台的延时摄影任务管理器，同时提�
 - 创建手动、单次定时、循环定时或持续拍摄任务。
 - 查看任务状态、进度、日志、工作进程和外部子程序。
 - 在后台执行可恢复的拍摄与后期处理流程。
-- 在 GUI 中编辑并校验 YAML 配置。
+- 在 GUI 表单中设置拍摄、照片处理时间、运行参数和 Webhook，并自动校验保存。
+- 选择即时处理，或每天在自定义时间集中处理已下载的照片。
 - 检查并安装受支持的工作流依赖。
 - 可选发送企业微信文本与图片通知。
 
@@ -111,9 +112,7 @@ push_image: true
 image_body: '{"msgtype":"image","image":{"base64":"__IMGBASE64__","md5":"__IMGMD5__"}}'
 ```
 
-点击“测试文本和图片”会先校验并保存编辑器内容，再依次发送两条测试消息。即使正式通知尚未启用，也可以执行测试。
-
-![企业微信 Webhook 配置](docs/images/timelapse-manager-webhook.png)
+点击“测试文本和图片”会先校验并保存表单内容，再依次发送两条测试消息。即使正式通知尚未启用，也可以执行测试。
 
 ### SunsetScore
 
@@ -131,6 +130,14 @@ SunsetScore 0.12.0 或更高版本可以抽样分析处理后的照片并识别�
 
 GUI 会自动创建 `config/auto_timelapse.yaml` 和 `config/webhook.yaml`，同目录提供了示例文件。
 
+### 照片处理时间
+
+在“配置中心 → 项目配置 → 照片处理时间”中，选择“即时”保留实时处理逻辑，或选择“自定义时间”并输入每天开始时间，例如 `00:00`。时间使用运行程序的电脑本地时区。
+
+自定义时间模式只下载并保存原片，暂不执行 HDR、评分、视频导出和清理。有限拍摄会生成独立的 `processing` 后期任务，可在任务列表中查看，永久任务链继续接力拍摄。后台调度进程会串行处理到期任务，关闭 GUI 后仍可执行。永续拍摄继续按批归档，在每日开始时间处理持久队列。开始时间之后下载完成的新素材等待次日；停机后重新打开程序会恢复已到期队列。电脑需要保持开机且未休眠。
+
+修改每天开始时间会应用到待处理队列，切换为“即时”会释放待处理任务；拍摄模式变更在下一次拍摄任务启动时生效。后期失败会保留原片，任务列表中可手动重新启动。删除尚未开始的后期任务可以取消排队，照片仍会保留。请求拍摄正常收尾不会跳过照片处理时间限制。
+
 | 项目/任务配置字段 | 含义 |
 | --- | --- |
 | `schema_version` | 配置格式版本，通常无需修改。 |
@@ -138,6 +145,8 @@ GUI 会自动创建 `config/auto_timelapse.yaml` 和 `config/webhook.yaml`，同
 | `capture_interval_seconds` | 拍摄组之间的默认间隔。 |
 | `watch_quiet_seconds` | Bracketlapse standby 在最终去闪和视频导出前使用的静默间隔。 |
 | `disk_space_warning_threshold_gb` | 剩余空间告警阈值，`0` 表示关闭。 |
+| `photo_processing.mode` | `immediate` 即时处理（默认），或 `scheduled` 每天集中处理。 |
+| `photo_processing.start_at` | 本机时区的每天开始时间，格式 `HH:MM`，默认 `00:00`。 |
 | `morning.start_at` / `morning.end_at` | 清晨定时时段。 |
 | `dusk.start_at` / `dusk.end_at` | 黄昏定时时段。 |
 | `commands.camera` | Camera Timelapse Controller 私有命令名或应用内路径。 |

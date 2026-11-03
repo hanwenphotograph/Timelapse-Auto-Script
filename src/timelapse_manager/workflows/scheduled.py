@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 
 from timelapse_manager.errors import ConfigError, TaskError
+from timelapse_manager.config import ConfigManager
+from timelapse_manager.processing.schedule import is_deferred
 from timelapse_manager.runtime import HardStopRequested, TaskRuntime
 from timelapse_manager.workflows.scheduled_finish import ScheduledFinisher
 from timelapse_manager.workflows.scheduled_processing import ScheduledProcessing
@@ -58,6 +60,8 @@ class ScheduledWorkflow:
         if interval is None:
             interval = self.project["capture_interval_seconds"]
         processing_enabled = bool(self.task["processing"].get("enabled", True))
+        deferred = processing_enabled and is_deferred(self.project)
+        realtime = processing_enabled and not deferred
         self.runtime.set_main_stage("waiting_capture")
         self.runtime.set_phase(
             "守护拍摄计划",
@@ -74,7 +78,7 @@ class ScheduledWorkflow:
         }
         score_session = (
             self.runtime.sunset_score.start_stream(spec.work_dir, spec.score_label)
-            if processing_enabled
+            if realtime
             else None
         )
         processing = ScheduledProcessing(
@@ -84,7 +88,7 @@ class ScheduledWorkflow:
             score_session.scan if score_session else None,
             env,
         )
-        if processing_enabled:
+        if realtime:
             if not processing.start():
                 return self.finisher.finish(
                     spec,
@@ -116,7 +120,7 @@ class ScheduledWorkflow:
                 self.runtime,
                 spec,
                 capture_progress,
-                hdr_role=processing.standby_role if processing_enabled else None,
+                hdr_role=processing.standby_role if realtime else None,
             ),
         )
         self.runtime.notify_async(
@@ -125,7 +129,7 @@ class ScheduledWorkflow:
         early = False
         while True:
             self.runtime.poll_controls()
-            if processing_enabled:
+            if realtime:
                 processing.poll_during_capture()
             if self.runtime.hard_stop.is_set():
                 camera.terminate()
@@ -144,6 +148,13 @@ class ScheduledWorkflow:
         if not success:
             self.runtime.log(f"camera-timelapse 异常退出，退出码={camera_code}")
             processing.terminate()
+        if deferred and success:
+            from timelapse_manager.workflows.deferred import enqueue_capture
+
+            # Apply the latest processing time even to a long-running capture.
+            self.runtime.project = ConfigManager(self.runtime.paths).load().project
+            enqueue_capture(self.runtime, spec, capture_progress, preserve_names)
+            return True
         if processing_enabled and success:
             success = processing.finish(early=early)
         return self.finisher.finish(

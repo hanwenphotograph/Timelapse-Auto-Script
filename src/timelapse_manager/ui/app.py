@@ -18,6 +18,7 @@ import customtkinter as ctk
 from timelapse_manager.dependency_manager import DependencyManager
 from timelapse_manager.service import ManagerService
 from timelapse_manager.task_store import ACTIVE_STATUSES
+from timelapse_manager.ui.configuration.page import ConfigPageMixin
 from timelapse_manager.ui.dialogs import NewTaskDialog, YamlEditorDialog
 from timelapse_manager.ui.package_page import PackagePage
 from timelapse_manager.ui.progress import compact_timestamp, task_progress_label
@@ -31,7 +32,6 @@ from timelapse_manager.ui.theme import (
     BORDER,
     DANGER,
     FONT_FAMILY,
-    MONOSPACE_FONT_FAMILY,
     MUTED,
     SUCCESS,
     SURFACE,
@@ -50,7 +50,7 @@ PAGE_META = {
     "tasks": ("任务管理", "创建任务并手动控制延时摄影工作流"),
     "processes": ("进程监控", "查看和管理由程序启动的受控进程"),
     "packages": ("包管理", "检测依赖版本、选择源码分支并执行安装或更新"),
-    "config": ("配置中心", "双向读取、校验和保存项目 YAML 配置"),
+    "config": ("配置中心", "设置拍摄、照片处理时间与通知"),
     "logs": ("运行日志", "按任务查看最新日志和错误信息"),
 }
 
@@ -80,7 +80,7 @@ ROLE_TEXT = {
 }
 
 
-class TimelapseApp:
+class TimelapseApp(ConfigPageMixin):
     REFRESH_MS = 1500
 
     def __init__(self, root: ctk.CTk, service: ManagerService) -> None:
@@ -97,7 +97,6 @@ class TimelapseApp:
         self._busy = 0
         self._active_page = "overview"
         self._current_config_kind = "project"
-        self._config_drafts: dict[str, str] = {}
         self._task_ids: list[str] = []
         self._overview_items: dict[str, dict[str, Any]] = {}
         self._overview_progress_task_id: str | None = None
@@ -473,102 +472,6 @@ class TimelapseApp:
         )
         self.process_table.grid(row=1, column=0, sticky="nsew")
         self._tables.append(self.process_table)
-
-    def _build_config_page(self) -> None:
-        page = self.page_frames["config"]
-        page.grid_rowconfigure(1, weight=1)
-        page.grid_columnconfigure(0, weight=1)
-
-        toolbar = ctk.CTkFrame(
-            page,
-            fg_color=SURFACE,
-            corner_radius=14,
-            border_width=1,
-            border_color=BORDER,
-        )
-        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
-        toolbar.grid_columnconfigure(1, weight=1)
-        self.config_selector = ctk.CTkSegmentedButton(
-            toolbar,
-            values=["项目配置", "Webhook"],
-            command=self._config_selected,
-            selected_color=ACCENT,
-            selected_hover_color=ACCENT,
-            unselected_color=SURFACE_ALT,
-            unselected_hover_color=BORDER,
-            text_color=TEXT,
-            corner_radius=9,
-            height=34,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-        )
-        self.config_selector.grid(row=0, column=0, padx=14, pady=12)
-        self.config_selector.set("项目配置")
-        self.config_path_label = ctk.CTkLabel(
-            toolbar,
-            text="",
-            text_color=MUTED,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=10),
-            anchor="e",
-        )
-        self.config_path_label.grid(row=0, column=1, sticky="e", padx=(12, 16))
-        self.test_webhook_button = action_button(
-            toolbar,
-            "测试文本和图片",
-            self.test_webhook,
-            width=126,
-        )
-        self.test_webhook_button.grid(
-            row=0,
-            column=2,
-            padx=(0, 14),
-            pady=8,
-        )
-
-        editor_frame = ctk.CTkFrame(
-            page,
-            fg_color=SURFACE,
-            corner_radius=14,
-            border_width=1,
-            border_color=BORDER,
-        )
-        editor_frame.grid(row=1, column=0, sticky="nsew")
-        editor_frame.grid_rowconfigure(0, weight=1)
-        editor_frame.grid_columnconfigure(0, weight=1)
-        self.config_text = ctk.CTkTextbox(
-            editor_frame,
-            wrap="none",
-            corner_radius=11,
-            border_width=0,
-            fg_color=SURFACE_ALT,
-            text_color=TEXT,
-            font=ctk.CTkFont(family=MONOSPACE_FONT_FAMILY, size=12),
-            undo=True,
-        )
-        self.config_text.grid(row=0, column=0, sticky="nsew", padx=9, pady=(9, 4))
-        buttons = ctk.CTkFrame(editor_frame, fg_color="transparent")
-        buttons.grid(row=1, column=0, sticky="ew", padx=10, pady=(6, 10))
-        buttons.grid_columnconfigure(2, weight=1)
-        action_button(buttons, "从磁盘重读", self.reload_config, width=112).grid(
-            row=0, column=0, sticky="w"
-        )
-        action_button(
-            buttons, "打开所在目录", self.open_config_location, width=112
-        ).grid(
-            row=0,
-            column=1,
-            sticky="w",
-            padx=(8, 0),
-        )
-        ctk.CTkButton(
-            buttons,
-            text="校验并保存",
-            command=self.save_config,
-            width=120,
-            fg_color=ACCENT,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-        ).grid(row=0, column=3, sticky="e")
-        self._update_config_path()
-        self._update_config_actions()
 
     def _build_packages_page(self) -> None:
         self.package_page = PackagePage(
@@ -1001,94 +904,6 @@ class TimelapseApp:
         if current not in self._task_ids:
             self.log_task_value.set(self._task_ids[0] if self._task_ids else "")
             self.log_task_box.set(self._task_ids[0] if self._task_ids else "暂无任务")
-
-    def _config_selected(self, label: str) -> None:
-        self._config_drafts[self._current_config_kind] = self.config_text.get(
-            "1.0", "end-1c"
-        )
-        self._current_config_kind = "project" if label == "项目配置" else "webhook"
-        if self._current_config_kind not in self._config_drafts:
-            try:
-                self._config_drafts[self._current_config_kind] = (
-                    self.service.config_manager.read_text(self._current_config_kind)
-                )
-            except Exception as exc:
-                messagebox.showerror("读取配置失败", str(exc), parent=self.root)
-                return
-        self._replace_config_text(self._config_drafts[self._current_config_kind])
-        self._update_config_path()
-        self._update_config_actions()
-
-    def reload_config(
-        self,
-        kind: str | None = None,
-        *,
-        quiet: bool = False,
-    ) -> None:
-        target = kind or self._current_config_kind
-        try:
-            self.service.reload()
-            content = self.service.config_manager.read_text(target)
-        except Exception as exc:
-            if not quiet:
-                messagebox.showerror("读取配置失败", str(exc), parent=self.root)
-            return
-        self._config_drafts[target] = content
-        if target == self._current_config_kind:
-            self._replace_config_text(content)
-            self._update_config_path()
-        if not quiet:
-            self._set_status("已从磁盘重新读取配置")
-
-    def _replace_config_text(self, content: str) -> None:
-        self.config_text.delete("1.0", tk.END)
-        self.config_text.insert("1.0", content)
-
-    def save_config(self) -> None:
-        self._save_current_config(show_confirmation=True)
-
-    def _save_current_config(self, *, show_confirmation: bool) -> bool:
-        kind = self._current_config_kind
-        content = self.config_text.get("1.0", "end-1c")
-        try:
-            self.service.config_manager.save_text(kind, content)
-            self.service.reload()
-        except Exception as exc:
-            messagebox.showerror("配置保存失败", str(exc), parent=self.root)
-            return False
-        self._config_drafts[kind] = content
-        self.refresh_all()
-        self._set_status("YAML 已校验并写入磁盘")
-        if show_confirmation:
-            messagebox.showinfo(
-                "配置已保存",
-                "YAML 已通过校验并写入磁盘。",
-                parent=self.root,
-            )
-        return True
-
-    def test_webhook(self) -> None:
-        if self._current_config_kind != "webhook":
-            return
-        if self._save_current_config(show_confirmation=False):
-            self._async_action("Webhook 测试推送", self.service.test_webhook)
-
-    def _current_config_path(self) -> Path:
-        if self._current_config_kind == "project":
-            return self.service.paths.config_file
-        return self.service.paths.webhook_file
-
-    def _update_config_path(self) -> None:
-        self.config_path_label.configure(text=str(self._current_config_path()))
-
-    def _update_config_actions(self) -> None:
-        if self._current_config_kind == "webhook":
-            self.test_webhook_button.grid()
-        else:
-            self.test_webhook_button.grid_remove()
-
-    def open_config_location(self) -> None:
-        self._open_path(self._current_config_path().parent)
 
     def open_log_location(self) -> None:
         task_id = self.log_task_value.get()

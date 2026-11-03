@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from copy import deepcopy
 from dataclasses import dataclass
@@ -18,6 +19,10 @@ from timelapse_manager.io_utils import (
 )
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.schedule import validate_schedule
+from timelapse_manager.processing.schedule import (
+    DEFAULT_PROCESSING_TIME,
+    validate_processing_time,
+)
 
 
 DEFAULT_PROJECT_CONFIG: dict[str, Any] = {
@@ -26,6 +31,7 @@ DEFAULT_PROJECT_CONFIG: dict[str, Any] = {
     "capture_interval_seconds": 6,
     "watch_quiet_seconds": 60,
     "disk_space_warning_threshold_gb": 0,
+    "photo_processing": dict(DEFAULT_PROCESSING_TIME),
     "morning": {"start_at": "03:00", "end_at": "09:00"},
     "dusk": {"start_at": "16:00", "end_at": "20:00"},
     "commands": {
@@ -68,7 +74,7 @@ def _number(
     value = data.get(key)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigError(f"{key} 必须是数字")
-    if value < minimum:
+    if not math.isfinite(value) or value < minimum:
         raise ConfigError(f"{key} 不能小于 {minimum}")
     if integer and not isinstance(value, int):
         raise ConfigError(f"{key} 必须是整数")
@@ -80,6 +86,7 @@ def validate_project_config(data: dict[str, Any]) -> None:
     _number(data, "capture_interval_seconds", 0.01)
     _number(data, "watch_quiet_seconds", 0)
     _number(data, "disk_space_warning_threshold_gb", 0)
+    validate_processing_time(data.get("photo_processing"))
     morning = data.get("morning")
     dusk = data.get("dusk")
     if not isinstance(morning, dict) or not isinstance(dusk, dict):
@@ -231,6 +238,14 @@ class ConfigManager:
         self.ensure()
         path = self._kind_path(kind)
         return path.read_text(encoding="utf-8")
+
+    def read_data(self, kind: str) -> dict[str, Any]:
+        """Read editable values without persisting environment overrides."""
+        self.ensure()
+        defaults = (
+            DEFAULT_PROJECT_CONFIG if kind == "project" else DEFAULT_WEBHOOK_CONFIG
+        )
+        return deep_merge(defaults, load_yaml(self._kind_path(kind)))
 
     def validate_text(self, kind: str, text: str) -> dict[str, Any]:
         parsed = parse_yaml(text, f"{kind} YAML")

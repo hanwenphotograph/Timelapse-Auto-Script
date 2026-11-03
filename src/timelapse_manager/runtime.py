@@ -21,6 +21,7 @@ from timelapse_manager.io_utils import now_iso
 from timelapse_manager.paths import AppPaths
 from timelapse_manager.process_utils import process_identity
 from timelapse_manager.progress_stages import MAIN_STAGES, validate_main_stage
+from timelapse_manager.processing.schedule import requires_processing_tools
 from timelapse_manager.runtime_storage import StorageGuard
 from timelapse_manager.sunset_score import SunsetScoreService
 from timelapse_manager.task_store import TaskStore
@@ -46,11 +47,13 @@ class TaskRuntime:
         self.poll_interval = float(self.runtime_options["poll_interval_seconds"])
         self.stop_timeout = float(self.runtime_options["stop_timeout_seconds"])
         commands = self.project["commands"]
+        processing_required = requires_processing_tools(self.task, self.project)
         self.dependency_paths = DependencyPaths.discover(self.paths.root)
         resolved = resolve_runtime_commands(
             self.paths.root,
             commands,
-            processing_enabled=bool(self.task["processing"].get("enabled", True)),
+            processing_enabled=processing_required,
+            capture_enabled=self.task["preset"] != "processing",
         )
         self.camera_command = list(resolved.camera)
         self.bracket_command = list(resolved.bracketlapse)
@@ -79,7 +82,7 @@ class TaskRuntime:
             self,
             str(commands["sunsetscore"]),
             int(self.project["sunset_score"]["interval"]),
-            processing_enabled=bool(self.task["processing"].get("enabled", True)),
+            processing_enabled=processing_required,
         )
         work_dir = self.task.get("capture", {}).get("work_dir")
         output = (

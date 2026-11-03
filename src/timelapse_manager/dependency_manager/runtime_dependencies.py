@@ -27,14 +27,17 @@ def resolve_runtime_commands(
     commands: dict[str, Any],
     *,
     processing_enabled: bool,
+    capture_enabled: bool = True,
 ) -> RuntimeCommands:
     paths = DependencyPaths.discover(root)
     environment = paths.runtime_environment()
-    camera = resolve_command(str(commands["camera"]), root=root)
-    camera_probe = probe_command(camera, env=environment)
-    if not camera_probe.ready:
-        raise ConfigError(f"Camera Timelapse Controller 不可用：{camera_probe.detail}")
-    _require_private_tool("gphoto2", root, environment)
+    camera = []
+    if capture_enabled:
+        camera = resolve_command(str(commands["camera"]), root=root)
+        camera_probe = probe_command(camera, env=environment)
+        if not camera_probe.ready:
+            raise ConfigError(f"Camera Timelapse Controller 不可用：{camera_probe.detail}")
+        _require_private_tool("gphoto2", root, environment)
     if not processing_enabled:
         return RuntimeCommands(tuple(camera))
     bracket = detect_bracketlapse(

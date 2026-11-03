@@ -17,7 +17,8 @@ Active tasks cannot share a work directory or overlap capture schedules. During 
 - Create manual, one-time scheduled, recurring, or continuous capture tasks.
 - Monitor task status, progress, logs, worker processes, and child tools.
 - Run capture and post-processing as restartable background workflows.
-- Edit validated YAML configuration from the GUI.
+- Configure capture, photo processing time, runtime options, and Webhook through validated GUI forms.
+- Process photos immediately or collect downloaded material for a custom daily start time.
 - Inspect and install supported workflow dependencies.
 - Send optional WeCom text and image notifications.
 
@@ -111,9 +112,7 @@ push_image: true
 image_body: '{"msgtype":"image","image":{"base64":"__IMGBASE64__","md5":"__IMGMD5__"}}'
 ```
 
-Use **测试文本和图片 (Test Text and Image)** to validate and save the editor content, then send both test messages. Testing works even while regular notifications are disabled.
-
-![WeCom webhook configuration](docs/images/timelapse-manager-webhook.png)
+Use **测试文本和图片 (Test Text and Image)** to validate and save the form, then send both test messages. Testing works even while regular notifications are disabled.
 
 ### SunsetScore
 
@@ -131,6 +130,14 @@ Use the control at the bottom of the sidebar to choose system, light, or dark ap
 
 The GUI creates `config/auto_timelapse.yaml` and `config/webhook.yaml` automatically. Example files are available beside them.
 
+### Photo processing time
+
+In **Configuration → Project → Photo processing time (照片处理时间)**, choose **Immediate (即时)** to keep live processing, or **Custom time (自定义时间)** and enter a daily start such as `00:00`. Times use the host computer's local timezone.
+
+Custom time downloads and preserves originals without starting HDR processing, scoring, video export, or cleanup. Finite captures create separate `processing` tasks visible in the task list, so recurring capture chains can continue. A detached dispatcher processes eligible jobs serially even when the GUI closes. Continuous capture keeps archiving batches and processes its durable queue at the daily start. Material arriving after a start waits until the next day; an overdue queue resumes when the program reopens after downtime. The computer must be running and awake to process photos.
+
+Changing the daily start applies to pending queues; changing to Immediate releases pending jobs. Capture mode changes take effect on the next capture task. Failed processing preserves originals and remains visible for manual restart. Delete an idle processing task to cancel its queued work without deleting the photos. Queues do not force processing when you request a graceful capture finish.
+
 | Project/task field | Meaning |
 | --- | --- |
 | `schema_version` | Configuration format version; normally leave it unchanged. |
@@ -138,6 +145,8 @@ The GUI creates `config/auto_timelapse.yaml` and `config/webhook.yaml` automatic
 | `capture_interval_seconds` | Default delay between capture groups. |
 | `watch_quiet_seconds` | Quiet interval used by Bracketlapse standby before final deflicker and video export. |
 | `disk_space_warning_threshold_gb` | Free-space warning threshold; `0` disables it. |
+| `photo_processing.mode` | `immediate` (default) or `scheduled` for a custom daily start. |
+| `photo_processing.start_at` | Daily processing start in local `HH:MM`, default `00:00`. |
 | `morning.start_at` / `morning.end_at` | Morning scheduling window. |
 | `dusk.start_at` / `dusk.end_at` | Dusk scheduling window. |
 | `commands.camera` | Camera Timelapse Controller private command name or application-local path. |

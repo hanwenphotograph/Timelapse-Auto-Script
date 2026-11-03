@@ -12,7 +12,11 @@ from timelapse_manager.task_store import ACTIVE_STATUSES, TaskStore
 
 
 def _work_dir(store: TaskStore, task: dict[str, Any]) -> Path | None:
-    value = task.get("capture", {}).get("work_dir")
+    value = (
+        task["deferred_processing"]["spec"]["work_dir"]
+        if task.get("preset") == "processing"
+        else task.get("capture", {}).get("work_dir")
+    )
     return store.config.paths.resolve_from_root(str(value)) if value else None
 
 
@@ -35,6 +39,15 @@ def validate_resources(store: TaskStore, task: dict[str, Any]) -> None:
         if other.get("_error"):
             continue
         state = store.read_state(other["id"], reconcile=True)
+        if (
+            other["id"] != task["id"]
+            and other.get("preset") == "processing"
+            and state["status"] == "idle"
+            and work_dir == _work_dir(store, other)
+        ):
+            raise TaskError(
+                f"工作目录仍有待处理照片，请先处理或移除队列任务：{other['id']}"
+            )
         live_children = [
             child
             for child in state.get("children", [])
@@ -48,6 +61,8 @@ def validate_resources(store: TaskStore, task: dict[str, Any]) -> None:
             continue
         if work_dir is not None and work_dir == _work_dir(store, other):
             raise TaskError(f"工作目录已有活动任务，不能重复拍摄或处理：{other['id']}")
+        if task.get("preset") == "processing" or other.get("preset") == "processing":
+            continue
         other_window = _window(other)
         # Expired tasks can resume processing without reserving the camera.
         if (window and window[1] <= now) or (other_window and other_window[1] <= now):
