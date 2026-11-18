@@ -84,16 +84,25 @@ class TaskRuntime:
             int(self.project["sunset_score"]["interval"]),
             processing_enabled=processing_required,
         )
-        work_dir = self.task.get("capture", {}).get("work_dir")
-        output = (
-            self.paths.resolve_from_root(str(work_dir)) if work_dir else self.auto_root
-        )
         self._storage = StorageGuard(
-            [self.store.runtime_dir, output],
+            self._data_directories(),
             float(self.project["disk_space_warning_threshold_gb"]),
             self.log,
             self.notify_async,
         )
+
+    def _data_directories(self) -> list[Path]:
+        if self.task["preset"] == "processing":
+            from timelapse_manager.workflows.deferred import processing_work_dir
+
+            work_dir = Path(self.task["deferred_processing"]["spec"]["work_dir"])
+            return [processing_work_dir(work_dir, self.auto_root)]
+        if self.task["preset"] == "eternal":
+            staging = self.paths.eternal_state_dir(
+                self.auto_root, self.task["eternal"].get("state_dir")
+            )
+            return [self.auto_root, staging]
+        return [self.paths.resolve_from_root(self.task["capture"]["work_dir"])]
 
     def _create_logger(self, console: bool) -> logging.Logger:
         logger = logging.getLogger(f"timelapse.task.{self.task_id}.{os.getpid()}")

@@ -4,8 +4,8 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
+from timelapse_manager.paths import AppPaths
 from timelapse_manager.workflows.eternal import EternalWorkflow
 
 
@@ -27,9 +27,7 @@ class DummyRuntime:
                 "queue_poll_seconds": 0.1,
             }
         }
-        self.paths = SimpleNamespace(
-            resolve_from_root=lambda value: (root / value).resolve()
-        )
+        self.paths = AppPaths.discover(root)
         self.auto_root = root / "output"
         self.progress: dict = {}
         self.finish_after_current = threading.Event()

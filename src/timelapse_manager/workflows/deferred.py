@@ -61,7 +61,7 @@ def enqueue_capture(runtime, spec, progress, preserve_names) -> str:
     return task_id
 
 
-def _existing_album(path: Path, auto_root: Path) -> Path:
+def processing_work_dir(path: Path, auto_root: Path) -> Path:
     if path.is_dir():
         return path
     # Earlier jobs may have added a sunset score to the shared date container.
@@ -80,7 +80,7 @@ def _existing_album(path: Path, auto_root: Path) -> Path:
 def run_processing(runtime) -> None:
     data = runtime.task["deferred_processing"]
     raw_spec = dict(data["spec"])
-    raw_spec["work_dir"] = _existing_album(
+    raw_spec["work_dir"] = processing_work_dir(
         Path(raw_spec["work_dir"]), runtime.auto_root
     )
     spec = WorkSpec(**raw_spec)

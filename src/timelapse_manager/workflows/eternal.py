@@ -44,11 +44,8 @@ class EternalWorkflow:
             task_options.get("images_per_group") or project_options["images_per_group"]
         )
         self.archive_retry_seconds = float(project_options["archive_retry_seconds"])
-        state_value = task_options.get("state_dir")
-        self.state_dir = (
-            runtime.paths.resolve_from_root(str(state_value))
-            if state_value
-            else runtime.auto_root / ".eternal"
+        self.state_dir = runtime.paths.eternal_state_dir(
+            runtime.auto_root, task_options.get("state_dir")
         )
         self.capture_dir = self.state_dir / "capture"
         self.queue_dir = self.state_dir / "queue"

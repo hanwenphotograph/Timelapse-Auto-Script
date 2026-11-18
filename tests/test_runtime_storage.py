@@ -6,7 +6,9 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from timelapse_manager.errors import TaskError
+from timelapse_manager.runtime import TaskRuntime
 from timelapse_manager.runtime_storage import StorageGuard
+from tests import test_integration as support
 
 
 class RuntimeStorageTests(unittest.TestCase):
@@ -56,6 +58,27 @@ class RuntimeStorageTests(unittest.TestCase):
                 self.guard.check()
         self.assertEqual(free.call_count, 3)
         self.assertEqual(self.notify.call_count, 2)
+
+
+class TaskDataStorageTests(unittest.TestCase):
+    setUp = support.IntegrationTests.setUp
+    tearDown = support.IntegrationTests.tearDown
+
+    def test_full_runtime_volume_does_not_stop_capture_on_data_volume(self) -> None:
+        task = self.service.create_task("拍摄数据盘", "scheduled_once")
+        output = Path(task["capture"]["work_dir"])
+        output.mkdir(parents=True)
+        runtime = TaskRuntime(task["id"], self.root)
+        try:
+            with patch(
+                "timelapse_manager.runtime_storage.disk_free_gb",
+                side_effect=lambda path: 100 if path == output else 0.5,
+            ) as free:
+                runtime.poll_controls()
+            free.assert_called_once_with(output)
+        finally:
+            runtime.finish("stopped", "测试结束", 0)
+            runtime.close()
 
 
 if __name__ == "__main__":

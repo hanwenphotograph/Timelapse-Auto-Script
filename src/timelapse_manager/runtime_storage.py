@@ -1,4 +1,4 @@
-"""Check worker storage before state and media writes exhaust the volume."""
+"""Check free space on the volumes used for capture and processing data."""
 
 from __future__ import annotations
 

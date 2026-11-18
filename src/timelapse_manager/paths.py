@@ -62,3 +62,8 @@ class AppPaths:
         if not path.is_absolute():
             path = self.root / path
         return path.resolve()
+
+    def eternal_state_dir(self, auto_root: Path, configured: str | None) -> Path:
+        if configured:
+            return self.resolve_from_root(configured)
+        return auto_root / ".eternal"
